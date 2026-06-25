@@ -34,17 +34,39 @@ def record(
         raise RuntimeError(f"Could not open webcam (index {camera_index}).")
 
     frames: list[Frame] = []
-    t0 = time.monotonic()
 
     win = f"Recording: {sign_name or output_path.stem} ({seconds:.0f}s)"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
     with Capture() as capture:
+        # Warmup: run capture.process() so the hand + pose models are fully initialized
+        # before recording starts. Without this, the first ~1s of recording gets zero hands.
+        warmup_end = time.monotonic() + 2.0
+        warmup_ts = 0
+        while time.monotonic() < warmup_end:
+            ok, bgr = cap.read()
+            if not ok:
+                continue
+            bgr = cv2.flip(bgr, 1)
+            capture.process(bgr, timestamp_ms=warmup_ts, t_seconds=0.0)
+            warmup_ts += 1
+            remaining_w = warmup_end - time.monotonic()
+            cv2.putText(bgr, f"GET READY  {remaining_w:.1f}s", (15, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 2, cv2.LINE_AA)
+            label = sign_name or output_path.stem
+            cv2.putText(bgr, f"Sign: {label}", (15, 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.imshow(win, bgr)
+            cv2.waitKey(1)
+        # Reset timestamp counter so recording starts fresh after warmup
+        capture._last_ts_ms = -1
+
+        t0 = time.monotonic()
         while True:
             ok, bgr = cap.read()
             if not ok:
-                break
+                continue
             bgr = cv2.flip(bgr, 1)
             elapsed = time.monotonic() - t0
             remaining = seconds - elapsed
@@ -71,6 +93,10 @@ def record(
 
     cap.release()
     cv2.destroyAllWindows()
+
+    if not frames:
+        print(f"WARNING: no frames captured — camera may not be available. File not written.")
+        return frames
 
     data = {
         "sign_name": sign_name,

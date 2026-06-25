@@ -1,131 +1,106 @@
-"""Phase 3 live harness: run the generic verifier against a chosen hospital sign.
+"""Phase 3 live demo: per-parameter verifier scores for a chosen sign.
 
-Opens the webcam, fills the rolling buffer, and every frame runs `core.verifier.verify(buffer,
-active_sign)`, drawing the per-parameter scores (handshape / location / movement / orientation)
-with each one colored green if it clears its threshold and red if it doesn't, plus the overall
-PASS/FAIL. This is the tool to *see why* a sign passes or fails — especially that a frozen pose
-keeps the movement score red.
-
-Switch the active sign with number keys; quit with 'q'.
-    1 HELP   2 PAIN   3 MEDICINE   4 EMERGENCY   5 A (static control)
+This is the Phase 5 debug overlay brought forward so you can SEE the verifier judging your sign
+in real time. It draws hand landmarks + a scorecard: one bar per parameter (green once it clears
+its threshold, red below), which hand is dominant, and the overall PASS state.
 
 Run (venv active, models downloaded):
-    python -m tools.demo_verify
+    python -m tools.demo_verify                 # COFFEE by default
+    python -m tools.demo_verify --sign LETTER_A
+Press 'q' to quit.
 """
 from __future__ import annotations
 
+import argparse
 import time
 
 import cv2
+import numpy as np
 
 from core.capture import Capture
 from core.landmarks import RollingBuffer
-from core.verifier import verify
-from signs import HELP, PAIN, MEDICINE, EMERGENCY, LETTER_A
-
-SIGN_KEYS = {
-    ord("1"): HELP,
-    ord("2"): PAIN,
-    ord("3"): MEDICINE,
-    ord("4"): EMERGENCY,
-    ord("5"): LETTER_A,
-}
-
-GREEN = (0, 200, 0)
-RED = (0, 0, 255)
-WHITE = (255, 255, 255)
-GREY = (160, 160, 160)
+from core.verifier import movement_debug, verify
+from signs import SIGNS
 
 
-def _draw_panel(bgr, sign, result, buffer):
-    h, w = bgr.shape[:2]
-    x0, y0 = 10, 10
-    cv2.rectangle(bgr, (x0, y0), (x0 + 360, y0 + 200), (30, 30, 30), -1)
-    cv2.putText(bgr, f"SIGN: {sign.name}", (x0 + 12, y0 + 32),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
-
-    y = y0 + 64
-    for param in ("handshape", "location", "movement", "orientation"):
-        s = result.scores[param]
-        thr = result.thresholds[param]
-        is_required = param in result.required
-        if not is_required:
-            color = GREY
-            tag = "(not gated)"
+def _draw_scorecard(img, result, move_dbg: str) -> None:
+    x, y, line = 12, 34, 30
+    banner = "PASS" if result.passed else "sign it..."
+    color = (0, 200, 0) if result.passed else (0, 165, 255)
+    cv2.putText(img, f"{result.sign_name}:  {banner}", (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
+    dom = result.roles.get("dominant", "-")
+    cv2.putText(img, f"dominant hand: {dom}", (x, y + 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    y += 52
+    for p in result.params:
+        if p.cleared:
+            col = (0, 200, 0)                       # green: cleared its threshold
+        elif p.required:
+            col = (0, 0, 255)                       # red: required and below threshold
         else:
-            color = GREEN if s >= thr else RED
-            tag = f">= {thr:.2f}"
-        cv2.putText(bgr, f"{param:12s} {s:.2f}  {tag}", (x0 + 12, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
-        y += 28
-
-    verdict = "PASS" if result.passed else "FAIL"
-    vcolor = GREEN if result.passed else RED
-    cv2.putText(bgr, verdict, (x0 + 12, y + 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, vcolor, 2, cv2.LINE_AA)
-    if not result.passed and result.failed:
-        cv2.putText(bgr, f"failing: {', '.join(result.failed)}", (x0 + 110, y + 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, RED, 1, cv2.LINE_AA)
-
-    hint = "keys: 1 HELP  2 PAIN  3 MEDICINE  4 EMERGENCY  5 A   q quit"
-    cv2.putText(bgr, hint, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, WHITE, 1, cv2.LINE_AA)
-    cv2.putText(bgr, f"buffer {len(buffer)}f / {buffer.duration:.1f}s",
-                (w - 230, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, WHITE, 1, cv2.LINE_AA)
+            col = (130, 130, 130)                   # gray: optional, doesn't block
+        bar = int(np.clip(p.score, 0.0, 1.0) * 130)
+        cv2.rectangle(img, (x, y - 13), (x + 130, y + 1), (70, 70, 70), 1)
+        cv2.rectangle(img, (x, y - 13), (x + bar, y + 1), col, -1)
+        tag = "req" if p.required else "opt-ignored"
+        txt_col = (255, 255, 255) if p.required else (150, 150, 150)
+        cv2.putText(img, f"{p.name:<22}{p.score:0.2f} / {p.threshold:0.2f} [{tag}]",
+                    (x + 140, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, txt_col, 1, cv2.LINE_AA)
+        y += line
+    # live movement sub-metrics (the calibration readout)
+    cv2.putText(img, f"movement: {move_dbg}", (x, y + 6),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
 
 
-def main(camera_index: int = 0, window_seconds: float = 1.8) -> None:
+def main(sign_name: str = "COFFEE", camera_index: int = 0) -> None:
+    if sign_name not in SIGNS:
+        raise SystemExit(f"Unknown sign '{sign_name}'. Known: {list(SIGNS)}")
+    sign = SIGNS[sign_name]
+
     cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open webcam (index {camera_index}).")
+        raise SystemExit(f"Could not open webcam (index {camera_index}). Try --camera 1.")
 
-    buffer = RollingBuffer(window_seconds=window_seconds)
-    active = HELP
+    buffer = RollingBuffer(window_seconds=2.0)
     t0 = time.monotonic()
-    last_log = 0.0
-    was_passing = False
-    print(f"[demo] active sign: {active.name}  (gated params: {active.required_parameters()})", flush=True)
+    print(f"[demo_verify] running for sign {sign_name}; press 'q' in the window to quit.")
+
+    win = f"ASL_Game Phase 3 - verify {sign_name} (q to quit)"
+    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
     with Capture() as capture:
         while True:
             ok, bgr = cap.read()
             if not ok:
                 break
-            bgr = cv2.flip(bgr, 1)  # mirror so motion feels natural
+            bgr = cv2.flip(bgr, 1)
             t = time.monotonic() - t0
             frame = capture.process(bgr, timestamp_ms=int(t * 1000), t_seconds=t)
             buffer.add(frame)
 
-            # landmarks (green) + palm centers (red)
             for hand in frame.hands:
-                for x, y, _z in hand.points:
-                    cv2.circle(bgr, (int(x), int(y)), 2, GREEN, -1)
+                for px, py, _z in hand.points:
+                    cv2.circle(bgr, (int(px), int(py)), 3, (0, 255, 0), -1)
                 cx, cy = hand.center
-                cv2.circle(bgr, (int(cx), int(cy)), 6, RED, -1)
+                cv2.circle(bgr, (int(cx), int(cy)), 6, (0, 0, 255), -1)
+            if frame.left_shoulder is not None and frame.right_shoulder is not None:
+                for sx, sy in (frame.left_shoulder, frame.right_shoulder):
+                    cv2.circle(bgr, (int(sx), int(sy)), 6, (255, 0, 0), -1)
 
-            result = verify(buffer, active)
-            _draw_panel(bgr, active, result, buffer)
-
-            # --- throttled stdout transcript so scores can be reviewed after quitting ---
-            if frame.hands and (t - last_log) > 0.5:
-                print(f"[{t:6.1f}s] {active.name:9s} {result}", flush=True)
-                last_log = t
-            if result.passed and not was_passing:
-                print(f"[{t:6.1f}s] *** {active.name} PASSED *** {result.scores}", flush=True)
-            was_passing = result.passed
-
-            cv2.imshow("ASL_Game - Phase 3 verifier (hospital)", bgr)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
+            _draw_scorecard(bgr, verify(buffer, sign), movement_debug(buffer, sign))
+            cv2.imshow(win, bgr)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
-            if key in SIGN_KEYS:
-                active = SIGN_KEYS[key]
-                buffer.clear()  # fresh window when switching signs
-                was_passing = False
-                print(f"[demo] active sign: {active.name}  (gated params: {active.required_parameters()})", flush=True)
 
     cap.release()
     cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sign", default="COFFEE", help="sign name from the registry (COFFEE, LETTER_A)")
+    ap.add_argument("--camera", type=int, default=0, help="webcam index")
+    args = ap.parse_args()
+    main(args.sign, args.camera)

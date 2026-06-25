@@ -1,161 +1,162 @@
 """Movement detectors over the rolling buffer — the core of the anti-bug fix.
 
-Every detector takes trajectories already extracted from the buffer (the verifier does the
-role -> hand resolution) plus a `shoulder_width` for scale, and returns a confidence in [0, 1].
-A static hold yields ~0 from every motion detector, which is exactly why a frozen pose can never
-satisfy a movement-required sign.
+Each detector reads a *trajectory* (a list of (t, center) samples spanning the window), never a
+single frame. Confidences are in [0, 1].
 
-  - linear(ts, pts, direction, min_displacement_ratio): net travel along a direction + monotonic
-    progress. Used by HELP (both hands rising).
-  - converge(pts_a, pts_b, min_approach_ratio): the gap between two hands shrinking. Used by PAIN.
-  - repeated(ts, pts, min_cycles, min_speed_ratio): oscillation cycles along the principal axis of
-    motion, with an optional speed gate for "rapid". Used by MEDICINE (twist) and EMERGENCY (shake).
-  - circular(ts, pts, pivot, ...): summed unwrapped rotation about a pivot with a radius-stability
-    check. Not used by hospital v1, kept for the shared engine (coffee-shop COFFEE).
-
-All distances are divided by `shoulder_width`, so thresholds are scale-invariant.
+  - circular: the acting hand's center angle about its own path centroid; unwrapped + summed;
+    radius stability check rejects random wandering. Calibrated on real hands (_RADIUS_CV_FREE).
+  - linear: window start->end displacement, direction, and monotonic progression.
+  - repeated: oscillation cycles in the distance-from-mean signal.
+  - converge: two-hand version — gap between both hands closing over the window (PAIN).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
+from core.schema import MovementKind, MovementReq
 
-def _as_xy(pts) -> np.ndarray:
-    a = np.asarray(pts, dtype=float)
-    return a.reshape(-1, 2)
+# Radius coefficient-of-variation below which a circle gets FULL radius credit. Real human
+# grinding is never a perfect circle, so we don't start penalizing until cv exceeds this.
+_RADIUS_CV_FREE = 0.30
 
 
-def linear(ts, pts, direction, min_displacement_ratio: float, shoulder_width: float) -> float:
-    """Net displacement along `direction` (in shoulder widths) + monotonic progression.
+def _series(traj):
+    ts = np.array([t for t, _ in traj], dtype=float)
+    pts = np.array([np.asarray(c, dtype=float) for _, c in traj], dtype=float)
+    return ts, pts
 
-    direction is an image-space vector (up = (0, -1)). Returns 0 for a static hold (no travel)
-    and approaches 1 when the hand travels at least `min_displacement_ratio` along `direction`
-    without backtracking.
-    """
-    pts = _as_xy(pts)
-    if len(pts) < 2 or shoulder_width <= 0:
+
+@dataclass
+class CircularMetrics:
+    """Sub-scores behind a circular-movement confidence — surfaced for live calibration."""
+
+    score: float
+    net_rotation_deg: float
+    radius_cv: float
+    mean_r_ratio: float
+    n: int
+    duration: float
+
+
+def circular_metrics(actor_traj, shoulder_width: float, req: MovementReq) -> CircularMetrics:
+    """Measure how circular the acting hand's path is about its own centroid."""
+    n = len(actor_traj)
+    if n < 5 or shoulder_width is None or shoulder_width <= 0:
+        return CircularMetrics(0.0, 0.0, 99.0, 0.0, n, 0.0)
+
+    ts, a = _series(actor_traj)
+    duration = float(ts[-1] - ts[0])
+    pivot = a.mean(axis=0)
+    rel = a - pivot
+    radii = np.linalg.norm(rel, axis=1)
+    mean_r = float(radii.mean())
+    mean_r_ratio = mean_r / shoulder_width
+    angles = np.unwrap(np.arctan2(rel[:, 1], rel[:, 0]))
+    net_rotation = abs(float(np.degrees(angles[-1] - angles[0])))
+    radius_cv = float(radii.std() / mean_r) if mean_r > 1e-6 else 99.0
+
+    if duration < req.min_duration_s or mean_r_ratio < 0.03:
+        return CircularMetrics(0.0, net_rotation, radius_cv, mean_r_ratio, n, duration)
+
+    rotation_score = float(np.clip(net_rotation / req.min_total_rotation_deg, 0.0, 1.0))
+    radius_excess = max(0.0, radius_cv - _RADIUS_CV_FREE)
+    radius_score = float(np.clip(1.0 - radius_excess / max(req.radius_tolerance_ratio, 1e-6), 0.0, 1.0))
+    score = rotation_score * radius_score
+    return CircularMetrics(score, net_rotation, radius_cv, mean_r_ratio, n, duration)
+
+
+def circular_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> float:
+    return circular_metrics(actor_traj, shoulder_width, req).score
+
+
+def linear_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> float:
+    if len(actor_traj) < 3 or shoulder_width is None or shoulder_width <= 0:
+        return 0.0
+    ts, a = _series(actor_traj)
+    if ts[-1] - ts[0] < req.min_duration_s:
         return 0.0
 
-    d = np.asarray(direction, dtype=float)
-    d = d / (np.linalg.norm(d) + 1e-9)
+    disp = a[-1] - a[0]
+    mag = float(np.linalg.norm(disp))
+    if mag < 1e-6:
+        return 0.0
+    mag_score = float(np.clip((mag / shoulder_width) / req.min_displacement_ratio, 0.0, 1.0))
 
-    # Projection of each point (relative to start) onto the desired direction, in shoulder widths.
-    rel = (pts - pts[0]) @ d / shoulder_width
-    net = float(rel[-1])                                   # signed travel along direction
+    unit = disp / mag
+    dir_score = 1.0
+    if req.direction is not None:
+        d = np.asarray(req.direction, dtype=float)
+        dn = np.linalg.norm(d)
+        if dn > 1e-6:
+            dir_score = float(np.clip(unit @ (d / dn), 0.0, 1.0))
 
-    if min_displacement_ratio > 0:
-        mag = np.clip(net / min_displacement_ratio, 0.0, 1.0)
-    else:
-        mag = 1.0 if net > 0 else 0.0
-
-    # Monotonic progress: fraction of steps that move forward along the direction.
-    steps = np.diff(rel)
-    mono = float(np.mean(steps > 0)) if len(steps) else 0.0
-
-    return float(np.clip(mag * (0.5 + 0.5 * mono), 0.0, 1.0))
+    proj = a @ unit
+    steps = np.diff(proj)
+    monotonic = float(np.mean(steps > 0)) if len(steps) else 0.0
+    return mag_score * dir_score * monotonic
 
 
-def converge(pts_a, pts_b, min_approach_ratio: float, shoulder_width: float) -> float:
-    """How much the gap between two hands shrinks over the window (in shoulder widths).
-
-    `pts_a`/`pts_b` are aligned frame-by-frame (same length). Returns ~0 if the hands hold a
-    constant distance, approaching 1 as the gap closes by at least `min_approach_ratio`.
-    """
-    pts_a, pts_b = _as_xy(pts_a), _as_xy(pts_b)
-    n = min(len(pts_a), len(pts_b))
-    if n < 2 or shoulder_width <= 0:
+def repeated_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> float:
+    if len(actor_traj) < 6:
+        return 0.0
+    ts, a = _series(actor_traj)
+    if ts[-1] - ts[0] < req.min_duration_s:
         return 0.0
 
-    gap = np.linalg.norm(pts_a[:n] - pts_b[:n], axis=1) / shoulder_width
+    signal = np.linalg.norm(a - a.mean(axis=0), axis=1)
+    signal = signal - signal.mean()
+    if np.allclose(signal, 0):
+        return 0.0
+    signs = np.sign(signal)
+    signs[signs == 0] = 1
+    crossings = int(np.sum(np.abs(np.diff(signs)) > 0))
+    cycles = crossings / 2.0
+    return float(np.clip(cycles / max(req.min_cycles, 1), 0.0, 1.0))
+
+
+def converge_confidence(traj_a, traj_b, shoulder_width: float, req: MovementReq) -> float:
+    """How much the gap between two hands shrinks over the window.
+
+    `traj_a` and `traj_b` are aligned frame-by-frame trajectories for the two hands (only frames
+    where both are present). Returns ~0 for a static held-apart pose, approaching 1 as the hands
+    close by at least `req.min_approach_ratio` shoulder widths with a roughly steady approach.
+    """
+    n = min(len(traj_a), len(traj_b))
+    if n < 3 or shoulder_width <= 0:
+        return 0.0
+
+    ts = np.array([t for t, _ in traj_a[:n]], dtype=float)
+    if ts[-1] - ts[0] < req.min_duration_s:
+        return 0.0
+
+    pts_a = np.array([np.asarray(c, float) for _, c in traj_a[:n]])
+    pts_b = np.array([np.asarray(c, float) for _, c in traj_b[:n]])
+    gap = np.linalg.norm(pts_a - pts_b, axis=1) / shoulder_width
+
     k = max(1, n // 4)
-    start = float(np.mean(gap[:k]))
-    end = float(np.mean(gap[-k:]))
-    approach = start - end                                  # positive when hands come together
+    approach = float(np.mean(gap[:k])) - float(np.mean(gap[-k:]))   # positive = hands closing
 
-    if min_approach_ratio > 0:
-        mag = np.clip(approach / min_approach_ratio, 0.0, 1.0)
+    mono = float(np.mean(np.diff(gap) < 0)) if n > 1 else 0.0
+
+    if req.min_approach_ratio > 0:
+        mag = float(np.clip(approach / req.min_approach_ratio, 0.0, 1.0))
     else:
         mag = 1.0 if approach > 0 else 0.0
 
-    # Reward a steady close rather than a jittery one.
-    steps = np.diff(gap)
-    mono = float(np.mean(steps < 0)) if len(steps) else 0.0
-
     return float(np.clip(mag * (0.5 + 0.5 * mono), 0.0, 1.0))
 
 
-def _principal_projection(pts: np.ndarray) -> np.ndarray:
-    """Project a 2D path onto its axis of greatest variance (the main line of motion)."""
-    centered = pts - pts.mean(axis=0)
-    # Principal axis via the covariance eigenvector of the largest eigenvalue.
-    cov = centered.T @ centered
-    eigvals, eigvecs = np.linalg.eigh(cov)
-    axis = eigvecs[:, int(np.argmax(eigvals))]
-    return centered @ axis
-
-
-def repeated(ts, pts, min_cycles: int, min_speed_ratio: float, shoulder_width: float) -> float:
-    """Oscillation cycles along the principal axis of motion, with an optional speed gate.
-
-    Counts how many times the motion reverses (back-and-forth) above a small noise floor, then
-    converts to cycles. For "rapid" signs (EMERGENCY) a `min_speed_ratio` gate also requires the
-    hand to actually move fast. A static hold has no reversals and no speed -> 0.
-    """
-    pts = _as_xy(pts)
-    ts = np.asarray(ts, dtype=float)
-    if len(pts) < 4 or shoulder_width <= 0:
-        return 0.0
-
-    proj = _principal_projection(pts)
-    noise_floor = 0.04 * shoulder_width                    # ignore sub-jitter wiggles
-
-    # Count sign changes of the centered signal that exceed the noise floor -> half-oscillations.
-    crossings = 0
-    last_sign = 0
-    for v in proj:
-        if abs(v) < noise_floor:
-            continue
-        s = 1 if v > 0 else -1
-        if last_sign != 0 and s != last_sign:
-            crossings += 1
-        last_sign = s
-    cycles = crossings / 2.0
-    cycle_score = np.clip(cycles / max(1, min_cycles), 0.0, 1.0)
-
-    # Speed gate (mean path length per second, in shoulder widths/sec).
-    duration = float(ts[-1] - ts[0]) if len(ts) >= 2 else 0.0
-    if min_speed_ratio > 0:
-        if duration <= 0:
-            return 0.0
-        path = float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1))) / shoulder_width
-        mean_speed = path / duration
-        speed_score = np.clip(mean_speed / min_speed_ratio, 0.0, 1.0)
-    else:
-        speed_score = 1.0
-
-    return float(np.clip(cycle_score * speed_score, 0.0, 1.0))
-
-
-def circular(ts, pts, pivot, min_total_rotation_deg: float, radius_tolerance_ratio: float) -> float:
-    """Summed unwrapped rotation about a pivot, gated by radius stability.
-
-    Not used by hospital v1; retained so the shared engine can verify the coffee-shop COFFEE sign
-    (dominant hand circling over the non-dominant fist) without a second code path.
-    """
-    pts = _as_xy(pts)
-    pivot = _as_xy(pivot)
-    n = min(len(pts), len(pivot))
-    if n < 4:
-        return 0.0
-
-    rel = pts[:n] - pivot[:n]
-    angles = np.unwrap(np.arctan2(rel[:, 1], rel[:, 0]))
-    total_deg = abs(float(np.degrees(angles[-1] - angles[0])))
-    rot_score = np.clip(total_deg / max(1.0, min_total_rotation_deg), 0.0, 1.0)
-
-    radii = np.linalg.norm(rel, axis=1)
-    mean_r = float(np.mean(radii)) + 1e-9
-    radius_var = float(np.std(radii)) / mean_r              # coefficient of variation
-    radius_ok = np.clip(1.0 - radius_var / max(1e-6, radius_tolerance_ratio), 0.0, 1.0)
-
-    return float(np.clip(rot_score * radius_ok, 0.0, 1.0))
+def movement_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> float:
+    """Dispatch on the required movement kind. NONE trivially satisfied; CONVERGE uses two trajs."""
+    if req.kind == MovementKind.NONE:
+        return 1.0
+    if req.kind == MovementKind.CIRCULAR:
+        return circular_confidence(actor_traj, shoulder_width, req)
+    if req.kind == MovementKind.LINEAR:
+        return linear_confidence(actor_traj, shoulder_width, req)
+    if req.kind == MovementKind.REPEATED:
+        return repeated_confidence(actor_traj, shoulder_width, req)
+    # CONVERGE needs two trajectories — called directly from the verifier; return 0 if reached here.
+    return 0.0

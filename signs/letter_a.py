@@ -1,28 +1,36 @@
-"""Fingerspelled letter A — static no-movement control.
+"""Fingerspelled letter A — static control (no movement).
 
-A = closed fist with the thumb resting alongside the index finger. Handshape + (loose) location
-only; `movement.kind="none"` and `movement.required=False`. This is the control that proves the
-*other* half of the contract: a genuinely static sign is allowed to pass while frozen, whereas a
-movement-required sign (HELP, PAIN, MEDICINE, EMERGENCY) must not.
+A = a closed fist with the thumb resting alongside the index finger (thumb up the side, not
+across the front). One hand, held in neutral signing space, no motion. It is the no-movement
+control that proves static signs still work, and a minimal-pair example: A vs S vs a plain fist
+are all "closed fist" shapes distinguished only by thumb position — exactly the kind of subtle
+distinction the handshape scorer (Phase 3) must handle.
 
-It also doubles as a minimal-pair reference: A vs "fist"/S differ only by thumb position, and A is
-exactly the dominant handshape HELP uses — so the same classifier work serves both.
-
-Five-parameter declaration:
-  handshape   : dominant "A" (thumb-alongside closed fist); no non-dominant hand
-  location    : neutral signing space (not gated)
-  movement    : none, NOT required  <- the static-control point
-  orientation : not gated in v1
-  NMM         : none in v1
+Parameters declared:
+  - handshape (dominant): A             [required]
+  - location: neutral signing space     [required]
+  - movement: NONE                      [not required]
 """
-from __future__ import annotations
-
-from core.schema import HandShapeReq, LocationReq, MovementReq, Sign
+from core.schema import (
+    DOMINANT,
+    Anchor,
+    HandShapeReq,
+    LocationReq,
+    MovementKind,
+    MovementReq,
+    Sign,
+)
 
 LETTER_A = Sign(
-    name="A",
-    dominant=HandShapeReq(kind="A", threshold=0.55),
+    name="LETTER_A",
+    two_handed=False,
+    dominant=HandShapeReq(kind="A", required=True),
     nondominant=None,
-    location=LocationReq(anchor="neutral", max_dist_ratio=1.5, required=False),
-    movement=MovementReq(kind="none", required=False),  # static: nothing to verify over time
+    location=LocationReq(
+        anchor=Anchor.NEUTRAL_SPACE,
+        acting_hand=DOMINANT,
+        max_dist_ratio=1.5,      # generous: anywhere in the signing space in front of the torso
+        required=True,
+    ),
+    movement=MovementReq(kind=MovementKind.NONE, required=False),
 )

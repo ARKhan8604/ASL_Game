@@ -1,168 +1,156 @@
-"""Sign Definition Schema — every sign declared as data.
+"""Sign Definition Schema — every ASL sign declared as data.
 
-This is the heart of the anti-bug design. Each ASL sign is a `Sign` dataclass that declares its
-five linguistic parameters across typed fields:
+A Sign is a frozen dataclass describing the five linguistic parameters (handshape per hand,
+location, movement, palm orientation, non-manual markers), each carrying a `required` flag and
+its own confidence threshold. The Phase 3 verifier reads a Sign + a RollingBuffer and gates the
+overall pass on EACH required parameter individually — never an average. That gating is what makes
+the single-frame COFFEE bug impossible to reproduce.
 
-  - handshape   (dominant, and optional non-dominant)   -> HandShapeReq
-  - location    (spatial relation, normalized to shoulder width) -> LocationReq
-  - movement    (none / linear / circular / repeated / converge) -> MovementReq
-  - orientation (palm facing) -> OrientationReq  (placeholder in v1; only gated if required)
-  - non-manual markers (NMM)  -> placeholder in v1
+Structural guard against the single-frame bug (enforced in Sign.__post_init__):
+movement is required IF AND ONLY IF a real movement kind is declared. You cannot construct a sign
+that declares a movement but marks it not-required, or marks movement required but declares NONE.
 
-Every requirement carries two things the verifier (Phase 3) relies on:
-
-  * `required: bool`  — whether this parameter must individually pass for the sign to pass.
-  * `threshold: float` in [0,1] — the confidence cutoff this parameter must clear.
-
-The overall pass rule is enforced in `core/verifier.py`: a sign passes **iff every parameter
-marked required individually clears its threshold** — there is no averaging. The single most
-important contract lives here in `MovementReq.__post_init__`: a *required* movement can never be
-`kind="none"`. That makes the original COFFEE-class bug — approving a movement sign from a frozen
-pose — structurally impossible to declare, let alone verify.
-
-Distances are always expressed as **ratios of shoulder width** (see core/landmarks.py), never raw
-pixels, so thresholds hold regardless of how close the signer sits to the camera.
-
-Roles vs. physical hands: signs declare "dominant" / "nondominant" *roles*. Mapping a role to an
-actual detected Left/Right hand happens at verify time (Phase 3), not here.
+All spatial thresholds are RATIOS of shoulder width (never raw pixels) so they hold regardless
+of camera distance.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal, Optional
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional, Tuple
 
-# The four parameters the verifier scores and gates on. (NMM is a v1 placeholder, not yet scored.)
-PARAMETERS: tuple[str, ...] = ("handshape", "location", "movement", "orientation")
-
-# Movement vocabulary. Adding a kind here is a deliberate act: the verifier must implement a
-# detector for it (core/movement.py) before any sign may declare it as required.
-MovementKind = Literal["none", "linear", "circular", "repeated", "converge"]
+# Roles — which physical hand a requirement refers to. The verifier maps these to detected
+# Left/Right hands; the schema stays handedness-agnostic.
+DOMINANT = "dominant"
+NONDOMINANT = "nondominant"
 
 
-@dataclass
+# --------------------------------------------------------------------------- handshape
+@dataclass(frozen=True)
 class HandShapeReq:
-    """A required handshape for one hand.
+    """Required handshape for one hand, matched by core.handshape predicates."""
 
-    `kind` is a coarse geometric bucket the Phase 3 classifier can decide from landmarks alone:
-      "fist"  — closed fist, thumb wrapped across (a.k.a. S).
-      "A"     — closed fist, thumb alongside/up the index (minimal pair with "fist").
-      "index" — index finger extended, the rest curled (a.k.a. "1"/"D").
-      "open"  — fingers extended/spread (flat hand or "5").
-      "claw"  — fingers curled but not closed (used to approximate E / the medicine hand in v1).
-    """
-
-    kind: str
+    kind: str                       # "fist" / "s" / "a" / "index" / "open" / "claw"
     required: bool = True
-    threshold: float = 0.6
+    min_confidence: float = 0.6
 
 
-@dataclass
+# --------------------------------------------------------------------------- location
+class Anchor(str, Enum):
+    OTHER_HAND = "other_hand"        # position relative to the other hand's center (two-handed)
+    NEUTRAL_SPACE = "neutral_space"  # in the default signing space in front of the torso
+
+
+@dataclass(frozen=True)
 class LocationReq:
-    """Where the acting hand must be, relative to a body/hand anchor.
+    """Where the acting hand must be, normalized to shoulder width."""
 
-    `anchor` is a semantic location resolved to landmarks by the verifier, e.g.:
-      "nondominant_palm" — on/over the non-dominant hand (HELP, MEDICINE).
-      "neutral"          — neutral signing space in front of the torso (PAIN, EMERGENCY).
-    `max_dist_ratio` is the largest allowed distance from that anchor, in shoulder widths.
-    """
-
-    anchor: str
-    max_dist_ratio: float = 0.6
+    anchor: Anchor = Anchor.OTHER_HAND
+    acting_hand: str = DOMINANT
+    max_dist_ratio: float = 1.0
+    min_dist_ratio: float = 0.0
+    vertical: Optional[str] = None           # "above" | "below" | None
     required: bool = True
-    threshold: float = 0.6
+    min_confidence: float = 0.6
 
 
-@dataclass
+# --------------------------------------------------------------------------- movement
+class MovementKind(str, Enum):
+    NONE = "none"
+    LINEAR = "linear"
+    CIRCULAR = "circular"
+    REPEATED = "repeated"
+    CONVERGE = "converge"            # two hands closing toward each other (e.g. PAIN)
+
+
+@dataclass(frozen=True)
 class MovementReq:
-    """The motion the sign requires over the rolling window (~1.5–2s).
+    """How the acting hand must move over the rolling window."""
 
-    Only the fields relevant to `kind` are read by the matching detector; the rest stay at their
-    defaults. This is the parameter that the old single-frame checker ignored — here it is a
-    first-class, typed, *gateable* requirement.
-    """
+    kind: MovementKind = MovementKind.NONE
+    actor: str = DOMINANT
+    pivot: str = NONDOMINANT
 
-    kind: MovementKind = "none"
-    actor: str = "dominant"               # which hand(s) move: "dominant" | "nondominant" | "both"
-    reference: Optional[str] = None       # pivot/anchor for circular & repeated, e.g. "nondominant_center"
+    # circular
+    min_total_rotation_deg: float = 300.0
+    radius_tolerance_ratio: float = 0.4
 
-    # --- linear ---
-    direction: Optional[tuple[float, float]] = None  # image-space unit vector; up = (0, -1)
-    min_displacement_ratio: float = 0.0              # net displacement along `direction`, shoulder widths
+    # linear
+    direction: Optional[Tuple[float, float]] = None
+    min_displacement_ratio: float = 0.3
 
-    # --- circular ---
-    min_total_rotation_deg: float = 300.0            # summed unwrapped rotation about `reference`
-    radius_tolerance_ratio: float = 0.4              # reject wandering: radius must stay within this band
+    # repeated
+    min_cycles: int = 2
 
-    # --- repeated ---
-    min_cycles: int = 0                              # number of back-and-forth oscillations
-    min_speed_ratio: float = 0.0                     # mean hand speed gate (shoulder widths/sec) for "rapid"
+    # converge (PAIN): minimum shrinkage of inter-hand gap, in shoulder-widths
+    min_approach_ratio: float = 0.15
 
-    # --- converge ---
-    min_approach_ratio: float = 0.0                  # how much inter-hand distance must shrink, shoulder widths
-
+    # shared
+    min_duration_s: float = 0.6
     required: bool = True
-    threshold: float = 0.6
-
-    def __post_init__(self) -> None:
-        # THE non-negotiable contract: you cannot require movement that is "none".
-        if self.required and self.kind == "none":
-            raise ValueError(
-                "MovementReq: a required movement cannot have kind='none'. A movement-defined "
-                "sign must declare a real motion (linear/circular/repeated/converge), or set "
-                "required=False for a genuinely static sign."
-            )
-        # Catch authoring mistakes early: a required linear move needs a direction to test against.
-        if self.required and self.kind == "linear" and self.direction is None:
-            raise ValueError("MovementReq(kind='linear', required=True) needs a `direction`.")
+    min_confidence: float = 0.6
 
 
-@dataclass
+# --------------------------------------------------------------------------- orientation
+class PalmFacing(str, Enum):
+    IN = "in"
+    OUT = "out"
+    UP = "up"
+    DOWN = "down"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+@dataclass(frozen=True)
 class OrientationReq:
-    """Palm-facing requirement. Declared in v1 but only gated when `required=True`."""
+    """Palm-facing requirement for one hand. Off by default in v1."""
 
-    facing: str                            # "up" | "down" | "in" | "out" | "left" | "right"
-    hand: str = "dominant"                 # "dominant" | "nondominant"
+    hand: str = DOMINANT
+    facing: PalmFacing = PalmFacing.DOWN
     required: bool = False
-    threshold: float = 0.6
+    min_confidence: float = 0.5
 
 
-@dataclass
+# --------------------------------------------------------------------------- sign
+@dataclass(frozen=True)
 class Sign:
-    """A complete sign definition: pure data, no detection logic.
-
-    `dominant` + optional `nondominant` give the handshape; `movement`, `location`, and optional
-    `palm_orientation` give the rest. `nmm` is a v1 placeholder. The verifier reads exactly these
-    fields — there is no sign-specific code path anywhere.
-    """
+    """A complete declarative description of one ASL sign."""
 
     name: str
     dominant: HandShapeReq
-    movement: MovementReq
     location: LocationReq
+    movement: MovementReq
     nondominant: Optional[HandShapeReq] = None
-    palm_orientation: Optional[OrientationReq] = None
-    nmm: None = None                       # placeholder for v1; declared so the field exists
+    orientation: Optional[OrientationReq] = None
+    nmm: None = None
+    two_handed: bool = True
 
-    @property
-    def two_handed(self) -> bool:
-        return self.nondominant is not None
+    def __post_init__(self):
+        has_motion = self.movement.kind != MovementKind.NONE
+        if has_motion and not self.movement.required:
+            raise ValueError(
+                f"Sign '{self.name}': declares movement kind={self.movement.kind.value} but "
+                f"movement.required=False. A declared movement must be enforced."
+            )
+        if self.movement.required and not has_motion:
+            raise ValueError(
+                f"Sign '{self.name}': movement.required=True but kind=NONE — nothing to verify."
+            )
+        if self.two_handed and self.nondominant is None:
+            raise ValueError(
+                f"Sign '{self.name}': two_handed=True but no nondominant handshape was given."
+            )
 
-    def required_parameters(self) -> tuple[str, ...]:
-        """Which of PARAMETERS must individually pass for this sign — the gating set.
-
-        `handshape` is gated if either hand's shape is required. The others follow their own flag.
-        This is what the verifier iterates over; nothing outside this set can fail the sign.
-        """
-        req: list[str] = []
-        handshape_required = self.dominant.required or (
-            self.nondominant is not None and self.nondominant.required
-        )
-        if handshape_required:
-            req.append("handshape")
+    def required_parameters(self) -> list[str]:
+        params: list[str] = []
+        if self.dominant.required:
+            params.append("handshape_dominant")
+        if self.nondominant is not None and self.nondominant.required:
+            params.append("handshape_nondominant")
         if self.location.required:
-            req.append("location")
+            params.append("location")
         if self.movement.required:
-            req.append("movement")
-        if self.palm_orientation is not None and self.palm_orientation.required:
-            req.append("orientation")
-        return tuple(req)
+            params.append("movement")
+        if self.orientation is not None and self.orientation.required:
+            params.append("orientation")
+        return params

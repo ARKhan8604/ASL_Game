@@ -1,12 +1,18 @@
-"""Geometric handshape predicates — pure landmark math, no ML.
+"""Geometric handshape predicates over a single hand's 21 landmarks.
 
-Each predicate takes a Hand (21 landmarks) and returns a confidence in [0, 1]. The classifiers
-are deliberately coarse: they bucket a hand into the handful of shapes the hospital v1 signs need
-(A, fist/S, index, open, claw). A vs S/fist is a minimal pair distinguished only by thumb
-position; the thumb check below handles that split (imperfectly, as expected for rule-based v1).
+Pure 2D geometry, orientation-tolerant where possible. Each predicate returns a confidence in
+[0, 1]. The verifier smooths these across recent frames (median) so one noisy frame can't flip a
+result.
 
-Smoothing across frames is done by the verifier (it averages per-frame scores over the buffer),
-so a single noisy frame cannot flip a verdict.
+Shapes supported:
+  fist / s — four fingers curled, thumb unconstrained (S-hand / plain fist)
+  a         — four fingers curled AND thumb extended alongside (letter A)
+  index     — index extended, other three curled (pointing / "1" hand)
+  open      — all four fingers extended (flat palm / B-hand)
+  claw      — fingers clearly curled but not fully closed (E-hand / bent-5)
+
+Minimal-pair note: A vs S vs plain fist are all "four fingers curled"; they differ only by thumb
+position. index vs open differ by how many fingers are extended.
 """
 from __future__ import annotations
 
@@ -16,111 +22,112 @@ from core.landmarks import (
     Hand,
     WRIST,
     THUMB_TIP,
-    INDEX_MCP, INDEX_TIP,
-    MIDDLE_TIP, MIDDLE_MCP,
-    RING_TIP, RING_MCP,
-    PINKY_TIP, PINKY_MCP,
+    INDEX_MCP,
+    INDEX_TIP,
+    MIDDLE_MCP,
+    MIDDLE_TIP,
+    RING_MCP,
+    RING_TIP,
+    PINKY_MCP,
+    PINKY_TIP,
+)
+
+_FINGERS = (
+    (INDEX_TIP, INDEX_MCP),
+    (MIDDLE_TIP, MIDDLE_MCP),
+    (RING_TIP, RING_MCP),
+    (PINKY_TIP, PINKY_MCP),
 )
 
 
-# ---------------------------------------------------------------------------
-# Low-level geometric helpers
-# ---------------------------------------------------------------------------
+def _xy(hand: Hand, idx: int) -> np.ndarray:
+    return hand.points[idx, :2]
 
-def _curl(hand: Hand, tip_idx: int, mcp_idx: int) -> float:
-    """How curled one finger is: 0 = fully extended, 1 = fully curled toward the palm.
 
-    Proxy: compare the tip's distance from the wrist to the MCP's distance from the wrist.
-    Extended fingers put the tip far past the MCP; a curled finger brings the tip back in.
+def _hand_scale(hand: Hand) -> float:
+    """Stable within-hand length: wrist -> middle-finger MCP."""
+    s = float(np.linalg.norm(_xy(hand, MIDDLE_MCP) - _xy(hand, WRIST)))
+    return s if s > 1e-6 else 1.0
+
+
+def _finger_curl(hand: Hand, tip: int, mcp: int) -> float:
+    """1.0 = curled (tip folded toward palm), 0.0 = extended.
+
+    Uses the ratio of (tip->wrist) to (mcp->wrist): an extended finger puts its tip far past the
+    knuckle (ratio ~1.6+); a curled finger folds the tip back (ratio drops to ~1.0 or below).
+    Calibrated on real hands in Phase 3.
     """
-    pts = hand.points
-    wrist = pts[WRIST, :2]
-    d_tip = float(np.linalg.norm(pts[tip_idx, :2] - wrist))
-    d_mcp = float(np.linalg.norm(pts[mcp_idx, :2] - wrist))
-    if d_mcp < 1e-6:
-        return 0.0
-    return float(np.clip(1.0 - (d_tip - d_mcp) / d_mcp, 0.0, 1.0))
+    tip_d = float(np.linalg.norm(_xy(hand, tip) - _xy(hand, WRIST)))
+    mcp_d = float(np.linalg.norm(_xy(hand, mcp) - _xy(hand, WRIST)))
+    r = tip_d / max(mcp_d, 1e-6)
+    return float(np.clip((1.6 - r) / (1.6 - 1.0), 0.0, 1.0))
 
 
-def _finger_curls(hand: Hand) -> np.ndarray:
-    """Curl values for [index, middle, ring, pinky], each in [0, 1]."""
-    pairs = [(INDEX_TIP, INDEX_MCP), (MIDDLE_TIP, MIDDLE_MCP),
-             (RING_TIP, RING_MCP), (PINKY_TIP, PINKY_MCP)]
-    return np.array([_curl(hand, t, m) for t, m in pairs])
+def _all_curls(hand: Hand) -> list[float]:
+    return [_finger_curl(hand, t, m) for t, m in _FINGERS]
 
 
-def _thumb_out(hand: Hand) -> float:
-    """How far the thumb sits from the index MCP (0 = tucked/wrapped, 1 = out/up alongside)."""
-    pts = hand.points
-    d = float(np.linalg.norm(pts[THUMB_TIP, :2] - pts[INDEX_MCP, :2]))
-    scale = float(np.linalg.norm(pts[INDEX_MCP, :2] - pts[WRIST, :2])) + 1e-6
-    return float(np.clip(d / scale, 0.0, 1.0))
+def _thumb_extended(hand: Hand) -> float:
+    """1.0 = thumb sticking out alongside the hand, 0.0 = tucked/across the palm."""
+    d = float(np.linalg.norm(_xy(hand, THUMB_TIP) - _xy(hand, INDEX_MCP))) / _hand_scale(hand)
+    return float(np.clip((d - 0.5) / (1.2 - 0.5), 0.0, 1.0))
 
 
 # ---------------------------------------------------------------------------
-# Public classifiers — each returns a confidence in [0, 1]
+# Public classifiers
 # ---------------------------------------------------------------------------
 
-def is_fist(hand: Hand) -> float:
-    """S-hand / plain fist: four fingers curled, thumb wrapped across (tucked in)."""
-    curls = _finger_curls(hand)
-    fingers_curled = float(np.mean(curls))
-    thumb_tucked = 1.0 - _thumb_out(hand)
-    return float(np.clip(fingers_curled * 0.7 + thumb_tucked * 0.3, 0.0, 1.0))
+def fist_confidence(hand: Hand) -> float:
+    """Four fingers curled (thumb unconstrained). Covers fist and S-handshape."""
+    return float(np.mean(_all_curls(hand)))
 
 
-def is_A(hand: Hand) -> float:
-    """A-hand: closed fist, but the thumb sits alongside / up (not wrapped across)."""
-    curls = _finger_curls(hand)
-    fingers_curled = float(np.mean(curls))
-    thumb_up = _thumb_out(hand)
-    return float(np.clip(fingers_curled * 0.65 + thumb_up * 0.35, 0.0, 1.0))
+def a_confidence(hand: Hand) -> float:
+    """Letter A: four fingers curled AND thumb extended alongside (not wrapped across)."""
+    return float(min(fist_confidence(hand), _thumb_extended(hand)))
 
 
-def is_index(hand: Hand) -> float:
+def index_confidence(hand: Hand) -> float:
     """Index finger extended, the other three curled (1-hand / D / pointing)."""
-    curls = _finger_curls(hand)
+    curls = _all_curls(hand)
     index_extended = 1.0 - curls[0]
     rest_curled = float(np.mean(curls[1:]))
     return float(np.clip(index_extended * 0.5 + rest_curled * 0.5, 0.0, 1.0))
 
 
-def is_open(hand: Hand) -> float:
+def open_confidence(hand: Hand) -> float:
     """Open / flat hand: all four fingers extended (B-hand / flat palm / 5)."""
-    curls = _finger_curls(hand)
+    curls = _all_curls(hand)
     return float(np.clip(1.0 - float(np.mean(curls)), 0.0, 1.0))
 
 
-def is_claw(hand: Hand) -> float:
-    """Claw: fingers clearly curled (approximates E-hand / bent-5 / closed-ish hand).
+def claw_confidence(hand: Hand) -> float:
+    """Fingers clearly curled but not fully closed (E-hand / bent-5 approximation).
 
-    Used for MEDICINE (dominant) and EMERGENCY. No hospital sign needs to distinguish a claw from a
-    plain fist, so this is deliberately generous: any hand whose fingers are meaningfully curled
-    (not flat, not pointing) scores high. The defining feature for these two signs is the MOTION
-    (repeated twist / rapid shake), which the verifier gates separately — the handshape only has to
-    confirm the hand is closed-ish, not flat or pointing.
+    Used for MEDICINE and EMERGENCY. Generously scored: any meaningfully-curled hand that isn't
+    flat or pointing passes. The motion detector (repeated) carries the discriminating weight for
+    these two signs; the handshape only needs to confirm the hand is closed-ish.
     """
-    curls = _finger_curls(hand)
+    curls = _all_curls(hand)
     m = float(np.mean(curls))
-    return float(np.clip((m - 0.25) / 0.35, 0.0, 1.0))  # 0 at flat (~0.25), saturates by ~0.60
+    return float(np.clip((m - 0.25) / 0.35, 0.0, 1.0))   # 0 at flat, saturates ~0.60
 
 
 # ---------------------------------------------------------------------------
-# Dispatch by the kind strings used in core/schema.py (HandShapeReq.kind)
+# Dispatch — matches the `kind` strings used in HandShapeReq
 # ---------------------------------------------------------------------------
 
-_CLASSIFIERS = {
-    "fist": is_fist,
-    "A": is_A,
-    "index": is_index,
-    "open": is_open,
-    "claw": is_claw,
+_DISPATCH = {
+    "fist": fist_confidence,
+    "s": fist_confidence,
+    "a": a_confidence,
+    "index": index_confidence,
+    "open": open_confidence,
+    "claw": claw_confidence,
 }
 
 
-def score(hand: Hand, kind: str) -> float:
-    """Confidence in [0, 1] that `hand` is making handshape `kind`."""
-    fn = _CLASSIFIERS.get(kind)
-    if fn is None:
-        raise ValueError(f"Unknown handshape kind '{kind}' — add a classifier in core/handshape.py.")
-    return fn(hand)
+def handshape_confidence(hand: Hand, kind: str) -> float:
+    """Confidence in [0, 1] that `hand` forms handshape `kind`. Unknown kinds score 0."""
+    fn = _DISPATCH.get(kind.lower())
+    return fn(hand) if fn is not None else 0.0

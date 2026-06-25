@@ -1,35 +1,52 @@
 """HELP — flagship movement-required sign for the hospital scenario.
 
-ASL HELP: the dominant hand makes an "A" (thumb-up closed fist) and rests on the open, upward
-non-dominant palm; both hands then lift **upward** together (you are "lifting someone up").
+ASL HELP: the dominant hand makes an "A" (thumb-up closed fist) resting on the open, upward
+non-dominant palm; both hands then lift upward together ("lifting someone up").
 
-This is the hospital analog of COFFEE: its defining feature is MOTION, so movement is `required`.
-A learner who simply freezes the correct two-hand pose MUST fail — the confusor test (Phase 4)
-asserts the failing parameter is specifically `movement`, not handshape or location.
+This is the hospital analog of COFFEE — its defining feature is MOTION, so movement is required.
+A learner who freezes the correct two-hand pose MUST fail on movement specifically (the confusor
+test in Phase 4 asserts this).
 
-Five-parameter declaration:
-  handshape   : dominant "A" (thumb-up fist) on non-dominant "open" (flat palm)
-  location    : dominant hand on/over the non-dominant palm  (required)
-  movement    : both hands translate UP together             (required)  <- the anti-bug gate
-  orientation : non-dominant palm faces up                   (declared, not gated in v1)
-  NMM         : none in v1
+Parameters declared:
+  handshape_dominant   : A-hand (thumb-up fist)           [required]
+  handshape_nondominant: open/flat palm                   [required]
+  location             : dominant hand on/near nondominant [required]
+  movement             : dominant rises upward (linear -y) [required]  <- anti-bug gate
+  orientation          : nondominant palm faces up         [not gated in v1]
 """
-from __future__ import annotations
-
-from core.schema import HandShapeReq, LocationReq, MovementReq, OrientationReq, Sign
+from core.schema import (
+    DOMINANT,
+    NONDOMINANT,
+    Anchor,
+    HandShapeReq,
+    LocationReq,
+    MovementKind,
+    MovementReq,
+    OrientationReq,
+    PalmFacing,
+    Sign,
+)
 
 HELP = Sign(
     name="HELP",
-    dominant=HandShapeReq(kind="A", threshold=0.55),       # thumb-up fist; minimal pair with "fist"/"S"
-    nondominant=HandShapeReq(kind="open", threshold=0.55), # flat supporting palm
-    location=LocationReq(anchor="nondominant_palm", max_dist_ratio=0.30, required=True),
-    movement=MovementReq(
-        kind="linear",
-        actor="both",                 # the supported hand and the platform palm rise together
-        direction=(0.0, -1.0),        # image space: up is -y
-        min_displacement_ratio=0.12,  # must rise ~0.12 shoulder widths over the window
+    two_handed=True,
+    dominant=HandShapeReq(kind="a", required=True, min_confidence=0.55),
+    nondominant=HandShapeReq(kind="open", required=True, min_confidence=0.55),
+    location=LocationReq(
+        anchor=Anchor.OTHER_HAND,
+        acting_hand=DOMINANT,
+        max_dist_ratio=0.45,
+        min_dist_ratio=0.0,
+        vertical=None,
         required=True,
-        threshold=0.6,
     ),
-    palm_orientation=OrientationReq(facing="up", hand="nondominant", required=False),
+    movement=MovementReq(
+        kind=MovementKind.LINEAR,
+        actor=DOMINANT,
+        direction=(0.0, -1.0),           # image-space up (y decreases upward)
+        min_displacement_ratio=0.12,
+        min_duration_s=0.5,
+        required=True,
+    ),
+    orientation=OrientationReq(hand=NONDOMINANT, facing=PalmFacing.UP, required=False),
 )

@@ -1,35 +1,46 @@
 """EMERGENCY — one-handed rapid repeated shake.
 
-ASL EMERGENCY: an "E" handshape (approximated as a "claw" in v1) is held up and **shaken rapidly**
-side to side. The defining features are repetition AND speed — a slow wave is not EMERGENCY, and a
-motionless raised hand certainly is not.
+ASL EMERGENCY: an "E" handshape (approximated as a claw in v1) is held up and shaken rapidly
+side to side. The defining features are repetition AND frequency — a slow single wave is not
+EMERGENCY. A higher min_cycles requirement (vs MEDICINE's 2) and a shorter min_duration_s
+enforce the "rapid" character.
 
-Movement is `required` with kind="repeated" plus a speed gate (`min_speed_ratio`), so EMERGENCY
-fails both when the hand is still and when it merely drifts slowly. One-handed, which distinguishes
-it from the two-handed MEDICINE even though both use a "repeated" motion and a "claw" handshape.
+One-handed, which distinguishes it from two-handed MEDICINE even though both use a claw and a
+REPEATED movement.
 
-Five-parameter declaration:
-  handshape   : dominant "claw" (E-hand, approx.); no non-dominant hand
-  location    : raised neutral space (not gated — the shake is the identity, not the height)
-  movement    : RAPID repeated side-to-side shake                     (required)
-  orientation : not gated in v1
-  NMM         : (urgent facial expression in real ASL) — placeholder in v1
+Parameters declared:
+  handshape_dominant: claw (E-hand approximation)    [required]
+  nondominant       : none (one-handed)
+  location          : neutral space                  [not gated — raised hand, varies]
+  movement          : rapid REPEATED side-to-side    [required]  <- anti-bug gate
+  orientation       : not gated in v1
 """
-from __future__ import annotations
-
-from core.schema import HandShapeReq, LocationReq, MovementReq, Sign
+from core.schema import (
+    DOMINANT,
+    Anchor,
+    HandShapeReq,
+    LocationReq,
+    MovementKind,
+    MovementReq,
+    Sign,
+)
 
 EMERGENCY = Sign(
     name="EMERGENCY",
-    dominant=HandShapeReq(kind="claw", threshold=0.5),    # "E" hand, coarse bucket
-    nondominant=None,                                     # one-handed
-    location=LocationReq(anchor="neutral", max_dist_ratio=1.5, required=False),
+    two_handed=False,
+    dominant=HandShapeReq(kind="claw", required=True, min_confidence=0.50),
+    nondominant=None,
+    location=LocationReq(
+        anchor=Anchor.NEUTRAL_SPACE,
+        acting_hand=DOMINANT,
+        max_dist_ratio=1.5,
+        required=False,
+    ),
     movement=MovementReq(
-        kind="repeated",
-        actor="dominant",
-        min_cycles=3,            # several shakes, not one wave
-        min_speed_ratio=1.8,     # "rapid": mean hand speed in shoulder widths/sec
+        kind=MovementKind.REPEATED,
+        actor=DOMINANT,
+        min_cycles=3,              # more oscillations than MEDICINE -> "rapid"
+        min_duration_s=0.5,        # shorter window -> must be fast
         required=True,
-        threshold=0.6,
     ),
 )

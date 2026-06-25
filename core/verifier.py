@@ -1,243 +1,288 @@
 """Generic temporal verifier — one engine for every sign.
 
-`verify(buffer, sign)` reads the rolling landmark buffer plus a Sign definition and returns a
-per-parameter confidence breakdown {handshape, location, movement, orientation} in [0, 1], the
-threshold each parameter had to clear, and an overall `passed`.
+verify(buffer, sign) returns a per-parameter breakdown PLUS an overall pass/fail. The overall
+pass requires EVERY parameter marked required to individually clear its own threshold. There is
+no averaging: a perfect handshape can never compensate for absent required movement.
 
-The pass rule is the whole point: `passed` is True **iff every parameter the sign marks required
-individually clears its threshold**. There is no averaging anywhere — a perfect handshape can
-never compensate for absent required movement. That is what makes the original single-frame
-COFFEE bug structurally impossible: HELP/PAIN/MEDICINE/EMERGENCY all mark movement required, and a
-frozen pose scores ~0 on movement, so they fail on movement specifically.
-
-Role resolution: signs talk about "dominant"/"nondominant" roles, not Left/Right hands. We don't
-trust mirror-flipped handedness labels, so for each candidate role->hand assignment we score the
-whole sign and keep the best-scoring assignment. One-handed signs try each detected hand as the
-dominant; two-handed signs try both orderings of the two detected hands.
+Role assignment: the hand that moved more across the window is DOMINANT; the stiller one is
+NONDOMINANT. This is handedness-agnostic and works for signs like COFFEE (one hand acts, one
+holds) and HELP (both rise, dominant tracks the higher-motion A-hand on top).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 
-from core import handshape, movement, orientation
-from core.landmarks import RollingBuffer, Frame
-from core.schema import Sign
+from core import handshape as hs
+from core import movement as mv
+from core import orientation as ori
+from core.landmarks import RollingBuffer, normalized_distance
+from core.schema import DOMINANT, NONDOMINANT, Anchor, MovementKind, Sign
+
+SMOOTH_SECONDS = 0.5
+
+
+@dataclass
+class ParamScore:
+    name: str
+    score: float
+    threshold: float
+    required: bool
+
+    @property
+    def cleared(self) -> bool:
+        return self.score >= self.threshold
+
+    @property
+    def passed(self) -> bool:
+        return (not self.required) or self.cleared
 
 
 @dataclass
 class VerifyResult:
-    """The full, explainable outcome of one verification."""
+    sign_name: str
+    params: list[ParamScore]
+    roles: dict
 
-    passed: bool
-    scores: dict[str, float]                  # handshape, location, movement, orientation in [0,1]
-    thresholds: dict[str, float]              # the cutoff each parameter had to clear
-    required: tuple[str, ...]                 # which parameters were gated for this sign
-    failed: tuple[str, ...] = ()              # required parameters that did NOT clear
-    note: str = ""
+    @property
+    def passed(self) -> bool:
+        required = [p for p in self.params if p.required]
+        return len(required) > 0 and all(p.passed for p in required)
 
-    def __str__(self) -> str:
-        bits = "  ".join(f"{k}={self.scores[k]:.2f}" for k in ("handshape", "location", "movement", "orientation"))
-        verdict = "PASS" if self.passed else f"FAIL({','.join(self.failed) or '-'})"
-        return f"[{verdict}] {bits}"
+    @property
+    def failing_required(self) -> list[str]:
+        return [p.name for p in self.params if p.required and not p.cleared]
 
-
-# ---------------------------------------------------------------------------
-# Trajectory / scale extraction from the buffer
-# ---------------------------------------------------------------------------
-
-def _frames(buffer) -> list[Frame]:
-    return list(buffer) if not isinstance(buffer, list) else buffer
+    def get(self, name: str) -> ParamScore | None:
+        for p in self.params:
+            if p.name == name:
+                return p
+        return None
 
 
-def _labels(frames: list[Frame]) -> list[str]:
-    """Distinct handedness labels seen, preferring the most recent complete frame's order."""
-    for f in reversed(frames):
-        if len(f.hands) >= 2:
-            return [f.hands[0].handedness, f.hands[1].handedness]
-    for f in reversed(frames):
-        if f.hands:
-            return [f.hands[0].handedness]
-    return []
+# ------------------------------------------------------------------ trajectory helpers
+def _trajectory(buffer: RollingBuffer, handedness: str | None):
+    if handedness is None:
+        return []
+    out = []
+    for f in buffer:
+        h = f.hand(handedness)
+        if h is not None:
+            out.append((f.t, h.center))
+    return out
 
 
-def _shoulder_width(frames: list[Frame]) -> float:
-    widths = [f.shoulder_width for f in frames if f.shoulder_width]
-    if widths:
-        return float(np.median(widths))
-    # Fallback so the demo still runs if pose flickers: a fraction of image width.
-    img_w = float(np.median([f.width for f in frames])) if frames else 640.0
-    return 0.25 * img_w
+def _aligned_pair(buffer: RollingBuffer, label_a: str, label_b: str):
+    """Frame-aligned (t, center) pairs for two hands (only frames where both are present)."""
+    traj_a, traj_b = [], []
+    for f in buffer:
+        ha, hb = f.hand(label_a), f.hand(label_b)
+        if ha is not None and hb is not None:
+            traj_a.append((f.t, ha.center))
+            traj_b.append((f.t, hb.center))
+    return traj_a, traj_b
 
 
-def _hand_traj(frames: list[Frame], label: str):
-    """(ts, pts) for the palm center of the hand matching `label`, over frames where it's present."""
-    ts, pts = [], []
-    for f in frames:
+def _path_length(traj) -> float:
+    if len(traj) < 2:
+        return 0.0
+    pts = np.array([c for _, c in traj], dtype=float)
+    return float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+
+
+def assign_roles(buffer: RollingBuffer) -> dict:
+    """Map DOMINANT/NONDOMINANT to detected handedness labels by relative motion."""
+    labels: list[str] = []
+    for f in buffer:
+        for h in f.hands:
+            if h.handedness not in labels:
+                labels.append(h.handedness)
+    if not labels:
+        return {}
+    if len(labels) == 1:
+        return {DOMINANT: labels[0]}
+    labels.sort(key=lambda lab: _path_length(_trajectory(buffer, lab)), reverse=True)
+    return {DOMINANT: labels[0], NONDOMINANT: labels[1]}
+
+
+def _recent(buffer: RollingBuffer, seconds: float):
+    frames = list(buffer)
+    if not frames:
+        return []
+    end_t = frames[-1].t
+    return [f for f in frames if end_t - f.t <= seconds]
+
+
+def _latest_shoulder_width(buffer: RollingBuffer):
+    for f in reversed(list(buffer)):
+        if f.shoulder_width:
+            return f.shoulder_width
+    return None
+
+
+# ------------------------------------------------------------------ parameter scorers
+def _score_handshape(buffer, handedness, kind) -> float:
+    vals = []
+    for f in _recent(buffer, SMOOTH_SECONDS):
+        h = f.hand(handedness)
+        if h is not None:
+            vals.append(hs.handshape_confidence(h, kind))
+    return float(np.median(vals)) if vals else 0.0
+
+
+def _score_location(buffer, sign: Sign, roles, shoulder_width) -> float:
+    if shoulder_width is None:
+        return 0.0
+    loc = sign.location
+    acting_label = roles.get(loc.acting_hand)
+    if acting_label is None:
+        return 0.0
+
+    vals = []
+    for f in _recent(buffer, SMOOTH_SECONDS):
+        acting = f.hand(acting_label)
+        if acting is None:
+            continue
+
+        if loc.anchor == Anchor.OTHER_HAND:
+            other_role = NONDOMINANT if loc.acting_hand == DOMINANT else DOMINANT
+            other_label = roles.get(other_role)
+            other = f.hand(other_label) if other_label else None
+            if other is None:
+                continue
+            d = normalized_distance(acting.center, other.center, shoulder_width)
+            dist_score = _band_score(d, loc.min_dist_ratio, loc.max_dist_ratio)
+            vert_score = _vertical_score(loc.vertical, acting.center, other.center)
+            vals.append(min(dist_score, vert_score))
+        else:  # NEUTRAL_SPACE
+            if f.left_shoulder is None or f.right_shoulder is None:
+                continue
+            mid = (f.left_shoulder + f.right_shoulder) / 2.0
+            d = normalized_distance(acting.center, mid, shoulder_width)
+            dist_score = _band_score(d, 0.0, loc.max_dist_ratio)
+            below = acting.center[1] > mid[1]
+            vals.append(dist_score if below else dist_score * 0.5)
+
+    return float(np.median(vals)) if vals else 0.0
+
+
+def _band_score(d: float, lo: float, hi: float) -> float:
+    """1.0 inside [lo, hi]; falls off smoothly outside."""
+    if lo <= d <= hi:
+        return 1.0
+    span = max(hi - lo, hi, 1e-6)
+    if d < lo:
+        return float(np.clip(1.0 - (lo - d) / span, 0.0, 1.0))
+    return float(np.clip(1.0 - (d - hi) / span, 0.0, 1.0))
+
+
+def _vertical_score(vertical, acting_c, other_c) -> float:
+    if vertical is None:
+        return 1.0
+    if vertical == "above":
+        return 1.0 if acting_c[1] < other_c[1] else 0.0
+    if vertical == "below":
+        return 1.0 if acting_c[1] > other_c[1] else 0.0
+    return 1.0
+
+
+def _score_movement(buffer, sign: Sign, roles, shoulder_width) -> float:
+    req = sign.movement
+    if req.kind == MovementKind.NONE:
+        return 1.0
+    actor_label = roles.get(req.actor)
+    actor_traj = _trajectory(buffer, actor_label)
+    if shoulder_width is None or not actor_traj:
+        return 0.0
+    if req.kind == MovementKind.CONVERGE:
+        # Two-hand movement: need aligned trajectories for both hands.
+        ndom_label = roles.get(NONDOMINANT)
+        if ndom_label is None:
+            return 0.0
+        traj_a, traj_b = _aligned_pair(buffer, actor_label, ndom_label)
+        return mv.converge_confidence(traj_a, traj_b, shoulder_width, req)
+    return mv.movement_confidence(actor_traj, shoulder_width, req)
+
+
+def _score_orientation(buffer, sign: Sign, roles) -> float:
+    o = sign.orientation
+    label = roles.get(o.hand)
+    if label is None:
+        return 0.0
+    vals = []
+    for f in _recent(buffer, SMOOTH_SECONDS):
         h = f.hand(label)
         if h is not None:
-            ts.append(f.t)
-            pts.append(h.center)
-    return np.asarray(ts, float), np.asarray(pts, float).reshape(-1, 2)
+            vals.append(ori.facing_confidence(h, o.facing))
+    return float(np.median(vals)) if vals else 0.0
 
 
-def _both_traj(frames: list[Frame], a: str, b: str):
-    """(ts, mean-of-two-palm-centers) over frames where BOTH hands are present."""
-    ts, pts = [], []
-    for f in frames:
-        ha, hb = f.hand(a), f.hand(b)
-        if ha is not None and hb is not None:
-            ts.append(f.t)
-            pts.append((ha.center + hb.center) / 2.0)
-    return np.asarray(ts, float), np.asarray(pts, float).reshape(-1, 2)
+# ------------------------------------------------------------------ public API
+def movement_debug(buffer: RollingBuffer, sign: Sign) -> str:
+    """One-line readout of live movement sub-metrics for the dev demo / calibration."""
+    req = sign.movement
+    if req.kind == MovementKind.NONE:
+        return "static (no movement required)"
+    roles = assign_roles(buffer)
+    sw = _latest_shoulder_width(buffer)
+    traj = _trajectory(buffer, roles.get(req.actor))
+    if req.kind == MovementKind.CIRCULAR:
+        m = mv.circular_metrics(traj, sw if sw else 0.0, req)
+        return (f"rot {m.net_rotation_deg:3.0f}/{req.min_total_rotation_deg:.0f}deg  "
+                f"radCV {m.radius_cv:0.2f}(full<0.30)  r/sw {m.mean_r_ratio:0.2f}  "
+                f"frames {m.n}  {m.duration:0.1f}s")
+    if req.kind == MovementKind.CONVERGE:
+        ndom_label = roles.get(NONDOMINANT)
+        if ndom_label and sw:
+            traj_a, traj_b = _aligned_pair(buffer, roles.get(req.actor), ndom_label)
+            n = min(len(traj_a), len(traj_b))
+            if n >= 2:
+                pts_a = np.array([c for _, c in traj_a[:n]], float)
+                pts_b = np.array([c for _, c in traj_b[:n]], float)
+                gap = np.linalg.norm(pts_a - pts_b, axis=1) / sw
+                return f"converge: gap {gap[0]:.2f}->{gap[-1]:.2f}sw  n={n}"
+        return "converge: waiting for both hands"
+    return f"{req.kind.value}: {len(traj)} samples"
 
 
-def _aligned_pair(frames: list[Frame], a: str, b: str):
-    """Frame-aligned palm-center paths for two hands (only frames where both are present)."""
-    pa, pb = [], []
-    for f in frames:
-        ha, hb = f.hand(a), f.hand(b)
-        if ha is not None and hb is not None:
-            pa.append(ha.center)
-            pb.append(hb.center)
-    return np.asarray(pa, float).reshape(-1, 2), np.asarray(pb, float).reshape(-1, 2)
+def verify(buffer: RollingBuffer, sign: Sign) -> VerifyResult:
+    roles = assign_roles(buffer)
+    sw = _latest_shoulder_width(buffer)
+    params: list[ParamScore] = []
 
+    dom = sign.dominant
+    params.append(ParamScore(
+        "handshape_dominant",
+        _score_handshape(buffer, roles.get(DOMINANT), dom.kind),
+        dom.min_confidence, dom.required,
+    ))
 
-def _mean_handshape(frames: list[Frame], label: str, kind: str) -> float:
-    """Average per-frame handshape confidence over frames where the hand is present (smoothing)."""
-    vals = [handshape.score(h, kind) for f in frames if (h := f.hand(label)) is not None]
-    return float(np.mean(vals)) if vals else 0.0
-
-
-# ---------------------------------------------------------------------------
-# Per-parameter scoring for one fixed role->label assignment
-# ---------------------------------------------------------------------------
-
-def _location_score(frames, sign: Sign, dom_label: str, nondom_label: Optional[str], sw: float) -> float:
-    loc = sign.location
-    if loc.anchor == "neutral":
-        return 1.0                                       # neutral space is unconstrained in v1
-    if loc.anchor == "nondominant_palm":
-        if nondom_label is None:
-            return 0.0
-        dists = []
-        for f in frames:
-            hd, hn = f.hand(dom_label), f.hand(nondom_label)
-            if hd is not None and hn is not None:
-                dists.append(float(np.linalg.norm(hd.center - hn.center)) / sw)
-        if not dists:
-            return 0.0
-        dist = float(np.median(dists))
-        margin = loc.max_dist_ratio
-        return float(np.clip(1.0 - max(0.0, dist - margin) / margin, 0.0, 1.0))
-    return 1.0                                            # unknown anchor: don't block in v1
-
-
-def _movement_score(frames, sign: Sign, dom_label: str, nondom_label: Optional[str], sw: float) -> float:
-    mv = sign.movement
-    if mv.kind == "none":
-        return 1.0
-
-    if mv.kind == "linear":
-        if mv.actor == "both" and nondom_label is not None:
-            ts, pts = _both_traj(frames, dom_label, nondom_label)
-        else:
-            ts, pts = _hand_traj(frames, dom_label)
-        return movement.linear(ts, pts, mv.direction, mv.min_displacement_ratio, sw)
-
-    if mv.kind == "converge":
-        if nondom_label is None:
-            return 0.0
-        pa, pb = _aligned_pair(frames, dom_label, nondom_label)
-        return movement.converge(pa, pb, mv.min_approach_ratio, sw)
-
-    if mv.kind == "repeated":
-        ts, pts = _hand_traj(frames, dom_label)
-        return movement.repeated(ts, pts, mv.min_cycles, mv.min_speed_ratio, sw)
-
-    if mv.kind == "circular":
-        ts, pts = _hand_traj(frames, dom_label)
-        if mv.reference == "nondominant_center" and nondom_label is not None:
-            _, pivot = _hand_traj(frames, nondom_label)
-        else:
-            pivot = np.tile(pts.mean(axis=0), (len(pts), 1)) if len(pts) else pts
-        return movement.circular(ts, pts, pivot, mv.min_total_rotation_deg, mv.radius_tolerance_ratio)
-
-    return 0.0
-
-
-def _orientation_score(frames, sign: Sign, dom_label: str, nondom_label: Optional[str]) -> float:
-    po = sign.palm_orientation
-    if po is None:
-        return 1.0
-    label = dom_label if po.hand == "dominant" else nondom_label
-    if label is None:
-        return 0.5
-    vals = [orientation.score(h, po.facing) for f in frames if (h := f.hand(label)) is not None]
-    return float(np.mean(vals)) if vals else 0.5
-
-
-def _score_assignment(frames, sign: Sign, dom_label: str, nondom_label: Optional[str], sw: float) -> dict:
-    """All four parameter scores for one fixed role->label assignment."""
-    dom_score = _mean_handshape(frames, dom_label, sign.dominant.kind)
     if sign.nondominant is not None:
-        nd_score = _mean_handshape(frames, nondom_label, sign.nondominant.kind) if nondom_label else 0.0
-        hs = min(dom_score, nd_score)                    # both hands must match: weakest hand wins
-    else:
-        hs = dom_score
-    return {
-        "handshape": hs,
-        "location": _location_score(frames, sign, dom_label, nondom_label, sw),
-        "movement": _movement_score(frames, sign, dom_label, nondom_label, sw),
-        "orientation": _orientation_score(frames, sign, dom_label, nondom_label),
-    }
+        nd = sign.nondominant
+        params.append(ParamScore(
+            "handshape_nondominant",
+            _score_handshape(buffer, roles.get(NONDOMINANT), nd.kind),
+            nd.min_confidence, nd.required,
+        ))
 
+    params.append(ParamScore(
+        "location",
+        _score_location(buffer, sign, roles, sw),
+        sign.location.min_confidence, sign.location.required,
+    ))
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+    params.append(ParamScore(
+        "movement",
+        _score_movement(buffer, sign, roles, sw),
+        sign.movement.min_confidence, sign.movement.required,
+    ))
 
-def verify(buffer, sign: Sign) -> VerifyResult:
-    """Score `sign` against the rolling `buffer` and apply required-gating (no averaging)."""
-    frames = _frames(buffer)
-    sw = _shoulder_width(frames)
-    labels = _labels(frames)
+    if sign.orientation is not None:
+        params.append(ParamScore(
+            "orientation",
+            _score_orientation(buffer, sign, roles),
+            sign.orientation.min_confidence, sign.orientation.required,
+        ))
 
-    # Candidate role->label assignments (we keep the best-scoring one).
-    candidates: list[tuple[str, Optional[str]]] = []
-    if sign.two_handed:
-        if len(labels) >= 2:
-            candidates = [(labels[0], labels[1]), (labels[1], labels[0])]
-        elif len(labels) == 1:
-            candidates = [(labels[0], None)]
-    else:
-        candidates = [(lab, None) for lab in labels] or []
-
-    # Per-parameter thresholds for this sign.
-    thresholds = {
-        "handshape": sign.dominant.threshold,
-        "location": sign.location.threshold,
-        "movement": sign.movement.threshold,
-        "orientation": sign.palm_orientation.threshold if sign.palm_orientation else 0.0,
-    }
-    required = sign.required_parameters()
-
-    if not candidates:
-        zero = {k: 0.0 for k in ("handshape", "location", "movement", "orientation")}
-        return VerifyResult(False, zero, thresholds, required, failed=required, note="no hands detected")
-
-    # Score every candidate; rank by required-params passing, then by their summed confidence.
-    best = None
-    best_key = None
-    for dom_label, nondom_label in candidates:
-        scores = _score_assignment(frames, sign, dom_label, nondom_label, sw)
-        failed = tuple(p for p in required if scores[p] < thresholds[p])
-        passed = len(failed) == 0
-        key = (passed, sum(scores[p] for p in required) if required else sum(scores.values()))
-        if best_key is None or key > best_key:
-            best_key, best = key, (scores, failed, passed)
-
-    scores, failed, passed = best
-    return VerifyResult(passed, scores, thresholds, required, failed=failed)
+    return VerifyResult(sign.name, params, roles)

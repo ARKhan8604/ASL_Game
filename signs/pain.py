@@ -1,34 +1,46 @@
-"""PAIN (HURT) — two-handed converging movement.
+"""PAIN (HURT) — two index fingers converging toward each other.
 
-ASL PAIN: two "1"/index hands, fingertips pointing toward each other, are brought together (often
-with a small twist) near the body part that hurts. The recognizable, verifiable feature for a
-rule-based v1 is the **convergence**: the two index hands start apart and the gap between them
-shrinks over the rolling window.
+ASL PAIN: both hands make a "1"/index handshape, fingertips pointing toward each other, and the
+hands move toward each other near the body part that hurts. The verifiable feature for rule-based
+v1 is the CONVERGENCE: the inter-hand gap must shrink over the rolling window.
 
-Movement is `required` with kind="converge", so holding two index fingers motionless apart fails
-on movement — the same anti-bug guarantee as HELP, expressed with a different motion type.
+Movement kind is CONVERGE (hospital addition to the engine), so holding two motionless index
+fingers apart fails on movement — the same anti-bug guarantee as HELP, expressed with a
+two-hand closing motion instead of a one-hand rise.
 
-Five-parameter declaration:
-  handshape   : both hands "index" (index extended, rest curled)
-  location    : neutral signing space (not gated — PAIN is signed at the painful area, which varies)
-  movement    : the two hands CONVERGE (inter-hand distance shrinks)  (required)
-  orientation : not gated in v1
-  NMM         : (real PAIN often carries a pained facial expression) — placeholder in v1
+Parameters declared:
+  handshape_dominant   : index finger extended        [required]
+  handshape_nondominant: index finger extended        [required]
+  location             : neutral space                [not gated — PAIN is signed at the hurt area]
+  movement             : both hands CONVERGE          [required]  <- anti-bug gate
+  orientation          : not gated in v1
 """
-from __future__ import annotations
-
-from core.schema import HandShapeReq, LocationReq, MovementReq, Sign
+from core.schema import (
+    DOMINANT,
+    Anchor,
+    HandShapeReq,
+    LocationReq,
+    MovementKind,
+    MovementReq,
+    Sign,
+)
 
 PAIN = Sign(
     name="PAIN",
-    dominant=HandShapeReq(kind="index", threshold=0.55),
-    nondominant=HandShapeReq(kind="index", threshold=0.55),
-    location=LocationReq(anchor="neutral", max_dist_ratio=1.5, required=False),
+    two_handed=True,
+    dominant=HandShapeReq(kind="index", required=True, min_confidence=0.55),
+    nondominant=HandShapeReq(kind="index", required=True, min_confidence=0.55),
+    location=LocationReq(
+        anchor=Anchor.NEUTRAL_SPACE,
+        acting_hand=DOMINANT,
+        max_dist_ratio=1.5,
+        required=False,            # PAIN is signed at the painful area — location varies
+    ),
     movement=MovementReq(
-        kind="converge",
-        actor="both",
-        min_approach_ratio=0.15,   # the gap must close by ~0.15 shoulder widths over the window
+        kind=MovementKind.CONVERGE,
+        actor=DOMINANT,
+        min_approach_ratio=0.15,   # gap must close by ~0.15 shoulder widths
+        min_duration_s=0.4,
         required=True,
-        threshold=0.6,
     ),
 )

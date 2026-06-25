@@ -47,7 +47,15 @@ look (background, prompts, animations). This split is deliberate — see [CLAUDE
 
 ## Running
 
-> Webcam scenarios arrive in a later build phase. Once available:
+**Phase 1 — landmark demo (available now).** Verifies capture + normalization + the rolling
+buffer with your webcam. Draws hand landmarks (green), palm centers (red), and shoulders
+(blue), and prints the inter-hand distance in *shoulder-widths* (the scale-invariant unit all
+thresholds use). Activate the venv, ensure the models are downloaded, then:
+```bash
+python -m tools.demo_landmarks      # press 'q' to quit
+```
+
+**Coffee-shop scenario** (arrives in Phase 5):
 ```bash
 python -m scenarios.coffee_shop.main --debug
 ```

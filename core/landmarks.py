@@ -1,8 +1,165 @@
 """Frame model, rolling buffer, and shoulder-width normalization.
 
-Implemented in Phase 1. Will define:
-  - Frame: one timestamped sample (21 landmarks/hand + pose shoulder points).
-  - RollingBuffer: a fixed ~1.5-2s time window of Frames (the basis for all movement checks).
-  - normalization helpers that express every distance as a ratio of shoulder width, so
-    thresholds don't break when the user sits closer to or further from the camera.
+This is the data backbone every later phase builds on:
+  - Hand / Frame: one timestamped sample (21 landmarks/hand + pose shoulder points), stored in
+    PIXEL coordinates so x and y share a unit regardless of webcam aspect ratio.
+  - RollingBuffer: a fixed ~1.5-2s time window of Frames — the ONLY thing movement checks read.
+  - normalized_distance(): every distance expressed as a ratio of shoulder width, so thresholds
+    don't break when the user sits closer to or further from the camera.
+
+Frames are JSON-serializable (to_dict/from_dict) so the Phase 4 recorder can save fixtures and
+the confusor tests can replay them.
 """
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Iterator, Optional
+
+import numpy as np
+
+# --- MediaPipe hand landmark indices (21-point model) ---
+WRIST = 0
+THUMB_TIP = 4
+INDEX_MCP, INDEX_TIP = 5, 8
+MIDDLE_MCP, MIDDLE_TIP = 9, 12
+RING_MCP, RING_TIP = 13, 16
+PINKY_MCP, PINKY_TIP = 17, 20
+FINGERTIPS = (THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP)
+MCPS = (INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)
+PALM_POINTS = (WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)
+
+# --- MediaPipe pose landmark indices (33-point model) ---
+POSE_LEFT_SHOULDER = 11
+POSE_RIGHT_SHOULDER = 12
+
+
+@dataclass
+class Hand:
+    """One detected hand: 21 landmarks in pixel coords (x, y) plus relative depth (z)."""
+
+    handedness: str            # "Left" or "Right", from the image's perspective
+    points: np.ndarray         # shape (21, 3): x_px, y_px, z (MediaPipe relative depth)
+
+    @property
+    def wrist(self) -> np.ndarray:
+        return self.points[WRIST, :2]
+
+    @property
+    def center(self) -> np.ndarray:
+        """Palm-center proxy: mean of wrist + finger MCPs (x, y in px). Stable pivot for motion."""
+        return self.points[list(PALM_POINTS), :2].mean(axis=0)
+
+    def to_dict(self) -> dict:
+        return {"handedness": self.handedness, "points": self.points.tolist()}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Hand":
+        return cls(handedness=d["handedness"], points=np.asarray(d["points"], dtype=float))
+
+
+@dataclass
+class Frame:
+    """One timestamped capture: any detected hands + shoulder points for scale normalization."""
+
+    t: float                                          # timestamp, seconds (monotonic)
+    width: int                                        # source image width (px)
+    height: int                                       # source image height (px)
+    hands: list[Hand] = field(default_factory=list)   # 0..2 hands, in detection order
+    left_shoulder: Optional[np.ndarray] = None        # (x, y) px
+    right_shoulder: Optional[np.ndarray] = None       # (x, y) px
+
+    @property
+    def shoulder_width(self) -> Optional[float]:
+        """Scale reference in px. None if pose/shoulders weren't detected."""
+        if self.left_shoulder is None or self.right_shoulder is None:
+            return None
+        w = float(np.linalg.norm(self.left_shoulder - self.right_shoulder))
+        return w if w > 1e-6 else None
+
+    def hand(self, handedness: str) -> Optional[Hand]:
+        """First hand matching 'Left'/'Right', or None."""
+        for h in self.hands:
+            if h.handedness == handedness:
+                return h
+        return None
+
+    @property
+    def has_both_hands(self) -> bool:
+        return len(self.hands) >= 2
+
+    @property
+    def is_complete(self) -> bool:
+        """Enough data to evaluate a two-handed sign: both hands + a shoulder scale."""
+        return self.has_both_hands and self.shoulder_width is not None
+
+    def to_dict(self) -> dict:
+        return {
+            "t": self.t,
+            "width": self.width,
+            "height": self.height,
+            "hands": [h.to_dict() for h in self.hands],
+            "left_shoulder": None if self.left_shoulder is None else self.left_shoulder.tolist(),
+            "right_shoulder": None if self.right_shoulder is None else self.right_shoulder.tolist(),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Frame":
+        return cls(
+            t=d["t"],
+            width=d["width"],
+            height=d["height"],
+            hands=[Hand.from_dict(h) for h in d["hands"]],
+            left_shoulder=None if d.get("left_shoulder") is None else np.asarray(d["left_shoulder"], float),
+            right_shoulder=None if d.get("right_shoulder") is None else np.asarray(d["right_shoulder"], float),
+        )
+
+
+def normalized_distance(p1, p2, shoulder_width: float) -> float:
+    """Euclidean distance between two pixel points, as a ratio of shoulder width."""
+    return float(np.linalg.norm(np.asarray(p1, float) - np.asarray(p2, float)) / shoulder_width)
+
+
+class RollingBuffer:
+    """A fixed time-window (seconds) of Frames. The basis for every movement check.
+
+    Old frames are evicted as new ones arrive, so the buffer always holds roughly the last
+    `window_seconds` of motion — never a single frame. Movement detectors read start/end and
+    iterate the window; they never look at just the current frame.
+    """
+
+    def __init__(self, window_seconds: float = 2.0):
+        self.window_seconds = window_seconds
+        self._frames: deque[Frame] = deque()
+
+    def add(self, frame: Frame) -> None:
+        self._frames.append(frame)
+        cutoff = frame.t - self.window_seconds
+        while self._frames and self._frames[0].t < cutoff:
+            self._frames.popleft()
+
+    def clear(self) -> None:
+        self._frames.clear()
+
+    def __len__(self) -> int:
+        return len(self._frames)
+
+    def __iter__(self) -> Iterator[Frame]:
+        return iter(self._frames)
+
+    @property
+    def frames(self) -> list[Frame]:
+        return list(self._frames)
+
+    @property
+    def start(self) -> Optional[Frame]:
+        return self._frames[0] if self._frames else None
+
+    @property
+    def end(self) -> Optional[Frame]:
+        return self._frames[-1] if self._frames else None
+
+    @property
+    def duration(self) -> float:
+        """Seconds spanned by the buffer (0 until at least two frames are present)."""
+        return (self._frames[-1].t - self._frames[0].t) if len(self._frames) >= 2 else 0.0

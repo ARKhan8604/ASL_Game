@@ -32,9 +32,9 @@ COFFEE = Sign(
     location=LocationReq(
         anchor=Anchor.OTHER_HAND,
         acting_hand=DOMINANT,
-        max_dist_ratio=0.6,      # stacked / close: within ~0.6 shoulder-widths of the other fist
+        max_dist_ratio=0.9,      # fists together, but forgiving of natural spread while grinding
         min_dist_ratio=0.0,
-        vertical="above",        # dominant fist sits above the non-dominant fist
+        vertical="above",        # soft preference: dominant on top (graded, not pass/fail)
         required=True,
     ),
     movement=MovementReq(

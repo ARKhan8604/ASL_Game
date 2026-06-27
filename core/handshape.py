@@ -1,13 +1,11 @@
-"""Geometric handshape predicates (fist / S / A) over a single hand's 21 landmarks.
+"""Geometric handshape predicates over a single hand's 21 landmarks.
 
-Pure 2D geometry, orientation-tolerant where possible. Each predicate returns a confidence in
-[0, 1]. The verifier smooths these across recent frames (median) so one noisy frame can't flip a
-result. Thresholds here are a tuned-by-eye first pass — the Phase 3 live demo exists to calibrate
-them on real hands.
+Pure 2D geometry, orientation-tolerant. Each handshape is a per-finger pattern of extended (1) /
+curled (0) states; `handshape_confidence` scores how well a hand matches the requested pattern.
+The verifier smooths these across recent frames (median) so one noisy frame can't flip a result.
 
-Minimal-pair note: A vs S vs a plain fist are all "four fingers curled"; they differ only by the
-thumb. v1 treats "fist"/"S" as four-fingers-curled (thumb unconstrained) and "A" as
-four-fingers-curled PLUS thumb extended alongside.
+Supported kinds: fist/s, open/b/5, a, point/1, v, l, y. Thresholds are a tuned-by-eye first pass;
+the live demo exists to calibrate them on real hands.
 """
 from __future__ import annotations
 
@@ -27,13 +25,13 @@ from core.landmarks import (
     PINKY_TIP,
 )
 
-# (tip, mcp) for the four non-thumb fingers
-_FINGERS = (
-    (INDEX_TIP, INDEX_MCP),
-    (MIDDLE_TIP, MIDDLE_MCP),
-    (RING_TIP, RING_MCP),
-    (PINKY_TIP, PINKY_MCP),
-)
+# (tip, mcp) per non-thumb finger
+_FINGER_LM = {
+    "index": (INDEX_TIP, INDEX_MCP),
+    "middle": (MIDDLE_TIP, MIDDLE_MCP),
+    "ring": (RING_TIP, RING_MCP),
+    "pinky": (PINKY_TIP, PINKY_MCP),
+}
 
 
 def _xy(hand: Hand, idx: int) -> np.ndarray:
@@ -41,18 +39,12 @@ def _xy(hand: Hand, idx: int) -> np.ndarray:
 
 
 def _hand_scale(hand: Hand) -> float:
-    """Stable within-hand length: wrist -> middle-finger MCP."""
     s = float(np.linalg.norm(_xy(hand, MIDDLE_MCP) - _xy(hand, WRIST)))
     return s if s > 1e-6 else 1.0
 
 
 def _finger_curl(hand: Hand, tip: int, mcp: int) -> float:
-    """1.0 = curled (tip folded toward the palm), 0.0 = extended.
-
-    Uses the ratio of (tip->wrist) to (mcp->wrist): an extended finger puts its tip far past the
-    knuckle from the wrist (ratio ~1.6+); a curled finger folds the tip back toward the palm so
-    the ratio drops to ~1.0 or below.
-    """
+    """1.0 = curled (tip folded toward palm), 0.0 = extended."""
     tip_d = float(np.linalg.norm(_xy(hand, tip) - _xy(hand, WRIST)))
     mcp_d = float(np.linalg.norm(_xy(hand, mcp) - _xy(hand, WRIST)))
     r = tip_d / max(mcp_d, 1e-6)
@@ -65,32 +57,51 @@ def _thumb_extended(hand: Hand) -> float:
     return float(np.clip((d - 0.5) / (1.2 - 0.5), 0.0, 1.0))
 
 
+def extensions(hand: Hand) -> dict:
+    """Per-digit extension in [0,1] (1 = extended, 0 = curled)."""
+    ext = {name: 1.0 - _finger_curl(hand, tip, mcp) for name, (tip, mcp) in _FINGER_LM.items()}
+    ext["thumb"] = _thumb_extended(hand)
+    return ext
+
+
+# per-finger target patterns: 1 = must be extended, 0 = must be curled, absent = don't care
+_PATTERNS = {
+    "fist": dict(index=0, middle=0, ring=0, pinky=0),
+    "s": dict(index=0, middle=0, ring=0, pinky=0),
+    "open": dict(index=1, middle=1, ring=1, pinky=1),
+    "b": dict(index=1, middle=1, ring=1, pinky=1),
+    "5": dict(index=1, middle=1, ring=1, pinky=1),
+    "point": dict(index=1, middle=0, ring=0, pinky=0),
+    "1": dict(index=1, middle=0, ring=0, pinky=0),
+    "v": dict(index=1, middle=1, ring=0, pinky=0),
+    "l": dict(thumb=1, index=1, middle=0, ring=0, pinky=0),
+    "y": dict(thumb=1, index=0, middle=0, ring=0, pinky=1),
+}
+
+
 def fist_confidence(hand: Hand) -> float:
-    """Four fingers curled (thumb unconstrained). Covers fist and the S-handshape."""
-    return float(np.mean([_finger_curl(hand, t, m) for t, m in _FINGERS]))
-
-
-def a_confidence(hand: Hand) -> float:
-    """Letter A: four fingers curled AND thumb extended alongside."""
-    return float(min(fist_confidence(hand), _thumb_extended(hand)))
+    return _match(hand, _PATTERNS["fist"])
 
 
 def open_confidence(hand: Hand) -> float:
-    """Flat/open hand (B / 5): all four fingers extended — the inverse of a fist."""
-    return float(np.mean([1.0 - _finger_curl(hand, t, m) for t, m in _FINGERS]))
+    return _match(hand, _PATTERNS["open"])
 
 
-_DISPATCH = {
-    "fist": fist_confidence,
-    "s": fist_confidence,
-    "a": a_confidence,
-    "open": open_confidence,
-    "b": open_confidence,
-    "5": open_confidence,
-}
+def a_confidence(hand: Hand) -> float:
+    """Letter A: four fingers curled AND thumb alongside (distinct from a plain fist)."""
+    return float(min(fist_confidence(hand), _thumb_extended(hand)))
+
+
+def _match(hand: Hand, pattern: dict) -> float:
+    ext = extensions(hand)
+    scores = [ext[f] if target == 1 else 1.0 - ext[f] for f, target in pattern.items()]
+    return float(min(scores)) if scores else 0.0
 
 
 def handshape_confidence(hand: Hand, kind: str) -> float:
     """Confidence in [0,1] that `hand` forms handshape `kind`. Unknown kinds score 0."""
-    fn = _DISPATCH.get(kind.lower())
-    return fn(hand) if fn is not None else 0.0
+    kind = kind.lower()
+    if kind == "a":
+        return a_confidence(hand)
+    pattern = _PATTERNS.get(kind)
+    return _match(hand, pattern) if pattern is not None else 0.0

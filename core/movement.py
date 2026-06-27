@@ -105,10 +105,10 @@ def linear_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> fl
         if dn > 1e-6:
             dir_score = float(np.clip(unit @ (d / dn), 0.0, 1.0))
 
-    proj = a @ unit
-    steps = np.diff(proj)
-    monotonic = float(np.mean(steps > 0)) if len(steps) else 0.0
-    return mag_score * dir_score * monotonic
+    # Monotonic progression is intentionally NOT required: net displacement (mag) + direction
+    # already reject jitter and back-and-forth (which have small net displacement), and demanding
+    # strict frame-by-frame monotonicity made real human motion feel stiff / fail intermittently.
+    return mag_score * dir_score
 
 
 def repeated_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> float:

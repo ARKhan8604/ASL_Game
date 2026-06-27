@@ -72,3 +72,8 @@ class TestThankYouWrongLocation:
         """
         loc = verify(_load_buffer("thankyou_onhead"), THANK_YOU).get("location")
         assert loc.score < loc.threshold, f"hand on head must fail location: {loc.score:.2f}"
+
+    def test_hand_on_nose_fails_location(self):
+        """Palm at the mouth/nose (too high) is not the chin — the palm must sit below the mouth."""
+        loc = verify(_load_buffer("thankyou_nose"), THANK_YOU).get("location")
+        assert loc.score < loc.threshold, f"hand on nose must fail location: {loc.score:.2f}"

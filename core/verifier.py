@@ -33,10 +33,14 @@ CHEST_OFFSET_RATIO = 0.35
 CHEST_VBAND = 0.25
 CHEST_VFALL = 0.12
 
-# Anchor.CHIN: "did the hand reach the chin", measured against the REAL mouth landmark (robust
-# to camera angle/distance and body proportions — no guessed offset). A hand more than this many
-# shoulder-widths ABOVE the mouth is treated as forehead/head, not chin, and ignored.
-ABOVE_MOUTH_TOL = 0.25
+# Anchor.CHIN, measured against the REAL mouth landmark (robust to camera/proportions).
+# When the fingertips touch the chin, the PALM CENTER (what we track) sits ~CHIN_DY shoulder-
+# widths BELOW the mouth (the palm hangs below the fingertips). Full credit within +-CHIN_DY_BAND,
+# linear falloff over CHIN_DY_FALL. This vertical band uniquely picks the chin and rejects the
+# nose/face (palm ~at the mouth), the head (palm above the mouth), and the chest (palm too low).
+CHIN_DY = 0.45
+CHIN_DY_BAND = 0.18
+CHIN_DY_FALL = 0.17
 
 
 @dataclass
@@ -224,17 +228,17 @@ def _score_chin_reach(buffer, acting_label, shoulder_width, loc) -> float:
     hand is at-or-below mouth height (frames well ABOVE the mouth are forehead/head, not chin, and
     are excluded). A hand that stays down at the chest never gets near the mouth, so it scores ~0.
     """
-    dists = []
+    best = 0.0
     for f in buffer:
         h = f.hand(acting_label)
         if h is None or f.mouth is None:
             continue
-        if (h.center[1] - f.mouth[1]) < -ABOVE_MOUTH_TOL * shoulder_width:
-            continue                                        # hand is up on the head, not the chin
-        dists.append(normalized_distance(h.center, f.mouth, shoulder_width))
-    if not dists:
-        return 0.0
-    return _band_score(min(dists), 0.0, loc.max_dist_ratio)
+        dx = abs(h.center[0] - f.mouth[0]) / shoulder_width
+        dy = (h.center[1] - f.mouth[1]) / shoulder_width    # +ve = palm below the mouth (the chin)
+        vert = 1.0 - max(0.0, abs(dy - CHIN_DY) - CHIN_DY_BAND) / CHIN_DY_FALL
+        horiz = 1.0 - max(0.0, dx - loc.max_dist_ratio) / 0.35
+        best = max(best, min(vert, horiz))                  # best (closest) approach over the window
+    return float(np.clip(best, 0.0, 1.0))
 
 
 def _score_movement(buffer, sign: Sign, roles, shoulder_width) -> float:
@@ -298,11 +302,10 @@ def location_debug(buffer: RollingBuffer, sign: Sign) -> str:
                 lo, hi = CHEST_OFFSET_RATIO - CHEST_VBAND, CHEST_OFFSET_RATIO + CHEST_VBAND
                 return f"loc dy {dy:.2f} (chest band {lo:.2f}-{hi:.2f})  dx {dx:.2f}"
             if loc.anchor == Anchor.CHIN:
-                ds = [normalized_distance(g.hand(label).center, g.mouth, sw)
-                      for g in buffer if g.hand(label) is not None and g.mouth is not None]
-                closest = min(ds) if ds else None
-                shown = f"{closest:.2f}" if closest is not None else "n/a"
-                return f"loc hand->mouth min {shown} (need <= {loc.max_dist_ratio:.2f})  now dy {dy:.2f}"
+                dys = [(g.hand(label).center[1] - g.mouth[1]) / sw
+                       for g in buffer if g.hand(label) is not None and g.mouth is not None]
+                best_dy = min(dys, key=lambda v: abs(v - CHIN_DY)) if dys else dy
+                return f"loc palm-vs-mouth dy {best_dy:+.2f} (chin ~ +{CHIN_DY:.2f})  now dy {dy:+.2f}"
             return f"loc dy {dy:.2f}  dx {dx:.2f}  anchor={loc.anchor.value}"
     return "loc: (acting hand or shoulders not visible)"
 

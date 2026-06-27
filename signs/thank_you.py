@@ -31,9 +31,9 @@ THANK_YOU = Sign(
     dominant=HandShapeReq(kind="open", required=True),
     nondominant=None,
     location=LocationReq(
-        anchor=Anchor.CHIN,      # the hand must START at the chin (reach chin height in the window)
+        anchor=Anchor.CHIN,      # the hand must reach the chin (near the real mouth landmark)
         acting_hand=DOMINANT,
-        max_dist_ratio=0.6,      # horizontal: chin is near center, not out to the side
+        max_dist_ratio=0.5,      # within ~0.5 shoulder-widths of the mouth at its closest approach
         required=True,
     ),
     movement=MovementReq(

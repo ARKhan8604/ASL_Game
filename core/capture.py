@@ -23,7 +23,14 @@ except ImportError as exc:  # pragma: no cover - guidance, not logic
         "Activate the venv and run:  pip install -r requirements.txt"
     ) from exc
 
-from core.landmarks import Frame, Hand, POSE_LEFT_SHOULDER, POSE_RIGHT_SHOULDER
+from core.landmarks import (
+    Frame,
+    Hand,
+    POSE_LEFT_SHOULDER,
+    POSE_MOUTH_LEFT,
+    POSE_MOUTH_RIGHT,
+    POSE_RIGHT_SHOULDER,
+)
 
 DEFAULT_HAND_MODEL = os.path.join("models", "hand_landmarker.task")
 DEFAULT_POSE_MODEL = os.path.join("models", "pose_landmarker_lite.task")
@@ -108,6 +115,8 @@ class Capture:
             ls, rs = pose[POSE_LEFT_SHOULDER], pose[POSE_RIGHT_SHOULDER]
             frame.left_shoulder = np.array([ls.x * w, ls.y * h], dtype=float)
             frame.right_shoulder = np.array([rs.x * w, rs.y * h], dtype=float)
+            ml, mr = pose[POSE_MOUTH_LEFT], pose[POSE_MOUTH_RIGHT]
+            frame.mouth = np.array([(ml.x + mr.x) * 0.5 * w, (ml.y + mr.y) * 0.5 * h], dtype=float)
 
         return frame
 

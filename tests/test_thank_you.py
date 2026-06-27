@@ -63,3 +63,12 @@ class TestThankYouWrongLocation:
         assert "location" in result.failing_required, (
             f"low start should fail on location; failing={result.failing_required}"
         )
+
+    def test_hand_on_head_fails_location(self):
+        """The reported bug: a hand up on the head (above the mouth) must NOT score location.
+
+        Anchoring to the real mouth landmark (not a guessed offset) makes this robust to camera
+        position — the head is above the mouth, so it's excluded from the chin check.
+        """
+        loc = verify(_load_buffer("thankyou_onhead"), THANK_YOU).get("location")
+        assert loc.score < loc.threshold, f"hand on head must fail location: {loc.score:.2f}"

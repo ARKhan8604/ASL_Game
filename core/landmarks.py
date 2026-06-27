@@ -30,6 +30,9 @@ MCPS = (INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)
 PALM_POINTS = (WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)
 
 # --- MediaPipe pose landmark indices (33-point model) ---
+POSE_NOSE = 0
+POSE_MOUTH_LEFT = 9
+POSE_MOUTH_RIGHT = 10
 POSE_LEFT_SHOULDER = 11
 POSE_RIGHT_SHOULDER = 12
 
@@ -68,6 +71,7 @@ class Frame:
     hands: list[Hand] = field(default_factory=list)   # 0..2 hands, in detection order
     left_shoulder: Optional[np.ndarray] = None        # (x, y) px
     right_shoulder: Optional[np.ndarray] = None       # (x, y) px
+    mouth: Optional[np.ndarray] = None                # (x, y) px — real face anchor for chin signs
 
     @property
     def shoulder_width(self) -> Optional[float]:
@@ -101,6 +105,7 @@ class Frame:
             "hands": [h.to_dict() for h in self.hands],
             "left_shoulder": None if self.left_shoulder is None else self.left_shoulder.tolist(),
             "right_shoulder": None if self.right_shoulder is None else self.right_shoulder.tolist(),
+            "mouth": None if self.mouth is None else self.mouth.tolist(),
         }
 
     @classmethod
@@ -112,6 +117,7 @@ class Frame:
             hands=[Hand.from_dict(h) for h in d["hands"]],
             left_shoulder=None if d.get("left_shoulder") is None else np.asarray(d["left_shoulder"], float),
             right_shoulder=None if d.get("right_shoulder") is None else np.asarray(d["right_shoulder"], float),
+            mouth=None if d.get("mouth") is None else np.asarray(d["mouth"], float),
         )
 
 

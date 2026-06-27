@@ -27,11 +27,11 @@ SMOOTH_SECONDS = 0.5
 
 # Anchor.CHEST geometry, in shoulder-widths below the shoulder line.
 # The hand must be at chest HEIGHT: full credit within +-CHEST_VBAND of CHEST_OFFSET_RATIO,
-# then a linear falloff over CHEST_VFALL. This is what separates chest from belly (a hand on
-# the belly is simply too far down).
-CHEST_OFFSET_RATIO = 0.6
+# then a linear falloff over CHEST_VFALL. Tuned so the pass/fail boundary lands at ~dy 0.6:
+# chest reads dy <= 0.6 (full credit up to 0.60), belly reads dy > 0.6 and fails.
+CHEST_OFFSET_RATIO = 0.35
 CHEST_VBAND = 0.25
-CHEST_VFALL = 0.25
+CHEST_VFALL = 0.12
 
 
 @dataclass

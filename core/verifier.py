@@ -25,8 +25,13 @@ from core.schema import DOMINANT, NONDOMINANT, Anchor, MovementKind, Sign
 # how much of the most-recent window to smooth handshape/location/orientation over
 SMOOTH_SECONDS = 0.5
 
-# the chest sits this many shoulder-widths below the shoulder line (for Anchor.CHEST)
+# Anchor.CHEST geometry, in shoulder-widths below the shoulder line.
+# The hand must be at chest HEIGHT: full credit within +-CHEST_VBAND of CHEST_OFFSET_RATIO,
+# then a linear falloff over CHEST_VFALL. This is what separates chest from belly (a hand on
+# the belly is simply too far down).
 CHEST_OFFSET_RATIO = 0.6
+CHEST_VBAND = 0.25
+CHEST_VFALL = 0.25
 
 
 @dataclass
@@ -156,9 +161,11 @@ def _score_location(buffer, sign: Sign, roles, shoulder_width) -> float:
             if f.left_shoulder is None or f.right_shoulder is None:
                 continue
             mid = (f.left_shoulder + f.right_shoulder) / 2.0
-            chest = mid + np.array([0.0, CHEST_OFFSET_RATIO * shoulder_width])  # below shoulders
-            d = normalized_distance(acting.center, chest, shoulder_width)
-            vals.append(_band_score(d, 0.0, loc.max_dist_ratio))
+            dx = abs(acting.center[0] - mid[0]) / shoulder_width      # sideways from center
+            dy = (acting.center[1] - mid[1]) / shoulder_width         # below the shoulder line
+            v = 1.0 - max(0.0, abs(dy - CHEST_OFFSET_RATIO) - CHEST_VBAND) / CHEST_VFALL
+            h = 1.0 - max(0.0, dx - loc.max_dist_ratio) / 0.35
+            vals.append(float(np.clip(min(v, h), 0.0, 1.0)))
 
         else:  # NEUTRAL_SPACE — anywhere in front of the torso, below the shoulders (loose)
             if f.left_shoulder is None or f.right_shoulder is None:

@@ -30,7 +30,7 @@ PLEASE = Sign(
     location=LocationReq(
         anchor=Anchor.CHEST,     # specifically the chest, not just "somewhere on the torso"
         acting_hand=DOMINANT,
-        max_dist_ratio=0.5,      # within ~0.5 shoulder-widths of the chest center; rejects belly/shoulder
+        max_dist_ratio=0.45,     # horizontal tolerance; vertical chest-height band is in the verifier
         required=True,
     ),
     movement=MovementReq(

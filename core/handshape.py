@@ -75,10 +75,18 @@ def a_confidence(hand: Hand) -> float:
     return float(min(fist_confidence(hand), _thumb_extended(hand)))
 
 
+def open_confidence(hand: Hand) -> float:
+    """Flat/open hand (B / 5): all four fingers extended — the inverse of a fist."""
+    return float(np.mean([1.0 - _finger_curl(hand, t, m) for t, m in _FINGERS]))
+
+
 _DISPATCH = {
     "fist": fist_confidence,
     "s": fist_confidence,
     "a": a_confidence,
+    "open": open_confidence,
+    "b": open_confidence,
+    "5": open_confidence,
 }
 
 

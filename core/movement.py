@@ -25,6 +25,10 @@ from core.schema import MovementKind, MovementReq
 # grinding is never a perfect circle, so we don't start penalizing until cv exceeds this.
 _RADIUS_CV_FREE = 0.30
 
+# Minimum oscillation amplitude (shoulder-widths) for a REPEATED sign to count. Below this it's
+# just landmark jitter on a still hand, not a real nod/wave.
+_REPEAT_MIN_AMP = 0.04
+
 
 def _series(traj):
     ts = np.array([t for t, _ in traj], dtype=float)
@@ -118,8 +122,11 @@ def repeated_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> 
     if ts[-1] - ts[0] < req.min_duration_s:
         return 0.0
 
-    signal = np.linalg.norm(a - a.mean(axis=0), axis=1)
-    signal = signal - signal.mean()
+    radii = np.linalg.norm(a - a.mean(axis=0), axis=1)
+    # amplitude gate: reject jitter on a still hand (only count a real oscillation)
+    if shoulder_width and shoulder_width > 0 and float(radii.max()) / shoulder_width < _REPEAT_MIN_AMP:
+        return 0.0
+    signal = radii - radii.mean()
     if np.allclose(signal, 0):
         return 0.0
     signs = np.sign(signal)

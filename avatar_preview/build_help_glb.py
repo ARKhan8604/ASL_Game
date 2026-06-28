@@ -44,18 +44,21 @@ scene = bpy.context.scene
 # geometry (everything below the knuckle line). The robot has no finger bones, so we
 # rotate the sub-knuckle vertices about the knuckle pivot directly in mesh data. -----
 from mathutils import Matrix
-MAKE_FIST   = True
-FIST_KNUCKLE_Z = 89.0          # world Z of the knuckle line; verts below this = fingers
-FIST_PIVOT  = Vector((34.0, 1.0, 89.0))   # right-hand knuckle pivot (world)
-FIST_ANGLE  = math.radians(125)
-FIST_AXIS   = 'X'
+MAKE_FIST      = True
+# Hand axes (right hand, world): fingers run DOWN (-Z), spread across Y, palm/back is the
+# thin X direction. A fist therefore curls about the Y knuckle-line. The curl is PROGRESSIVE
+# (angle grows with depth below the knuckle) so fingers roll into the palm instead of sweeping
+# rigidly through it.
+FIST_KNUCKLE_Z = 90.0          # world Z of the knuckle line; verts below = finger segments
+FIST_PIVOT_X   = 35.5          # X of the knuckle pivot (dorsal side, so fingers curl palmward)
+FIST_RATE      = math.radians(8)    # curl angle per world-unit of depth (~95° at the fingertip)
+FIST_DIR       = 1             # curl direction about Y (sign tuned so fingers fold into palm)
 
 def mesh_center_x_data(ob):
     cs = [ob.matrix_world @ Vector(c) for c in ob.bound_box]
     return sum(c.x for c in cs) / 8.0
 
 def make_fist():
-    rot = Matrix.Rotation(FIST_ANGLE, 4, FIST_AXIS)
     moved = 0
     for ob in bpy.data.objects:
         if ob.type != 'MESH' or "Hand" not in ob.name:
@@ -66,8 +69,12 @@ def make_fist():
         mwi = mw.inverted()
         for v in ob.data.vertices:
             w = mw @ v.co
-            if w.z < FIST_KNUCKLE_Z:
-                w = FIST_PIVOT + rot @ (w - FIST_PIVOT)
+            d = FIST_KNUCKLE_Z - w.z
+            if d > 0:                        # finger segment: curl it about the knuckle line (Y)
+                ang = FIST_DIR * FIST_RATE * d
+                rot = Matrix.Rotation(ang, 4, 'Y')
+                pivot = Vector((FIST_PIVOT_X, w.y, FIST_KNUCKLE_Z))  # per-vert: rotate in X-Z, keep Y
+                w = pivot + rot @ (w - pivot)
                 v.co = mwi @ w
                 moved += 1
         ob.data.update()

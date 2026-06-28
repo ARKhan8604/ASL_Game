@@ -249,8 +249,8 @@ def breathe_clip(mode: str) -> list[Frame]:
     # with DOCTOR (one hand tapping the other).
     out = []
     for t in _ts():
-        dx = 20.0 * math.sin(2 * math.pi * 1.5 * t) if mode == "correct" else 0.0
-        dom = np.array([CX + 80.0 + dx, Y_CHEST])    # right hand breathes out/in
+        dx = 38.0 * math.sin(2 * math.pi * 1.5 * t) if mode == "correct" else 0.0
+        dom = np.array([CX + 80.0 + dx, Y_CHEST])    # right hand breathes out/in (a big swing)
         nd = np.array([CX - 80.0 - dx, Y_CHEST])     # left hand mirrors
         if mode == "idle":
             dom, nd = dom + _jit(), nd + _jit()

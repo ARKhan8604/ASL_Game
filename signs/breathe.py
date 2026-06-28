@@ -38,6 +38,7 @@ BREATHE = Sign(
         kind=MovementKind.REPEATED,
         actor=DOMINANT,
         min_cycles=2,
+        min_amplitude_ratio=0.12,   # a DELIBERATE breath — a big out/in, not passive resting motion
         min_duration_s=0.6,
         required=True,
     ),

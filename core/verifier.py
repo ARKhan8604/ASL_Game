@@ -213,7 +213,13 @@ def _score_location(buffer, sign: Sign, roles, shoulder_width) -> float:
             d = normalized_distance(acting.center, other.center, shoulder_width)
             dist_score = _band_score(d, loc.min_dist_ratio, loc.max_dist_ratio)
             vert_score = _vertical_score(loc.vertical, acting.center, other.center, shoulder_width)
-            vals.append(min(dist_score, vert_score))
+            score = min(dist_score, vert_score)
+            # Optional body-height gate: e.g. DOCTOR/NURSE tap on the forearm in the TORSO, so the
+            # hands must be BELOW the mouth — tapping up at the face must not count.
+            if loc.below == "mouth" and f.mouth is not None:
+                dy = (acting.center[1] - f.mouth[1]) / shoulder_width   # +ve = below the mouth
+                score *= float(np.clip((dy + 0.1) / 0.3, 0.0, 1.0))     # 0 at/above the face
+            vals.append(score)
         elif loc.anchor == Anchor.CHEST:
             if f.left_shoulder is None or f.right_shoulder is None:
                 continue

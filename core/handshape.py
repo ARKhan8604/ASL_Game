@@ -125,37 +125,22 @@ def claw_confidence(hand: Hand) -> float:
     return float(base * penalty)
 
 
-def n_confidence(hand: Hand) -> float:
-    """Two fingers (index + middle) extended, ring + pinky curled (the "N"/"U"/"H" family).
-
-    v1 approximation: the real N/H thumb details aren't reliably detectable, so we recognise these
-    by FINGER COUNT — exactly two extended fingers. NURSE and HOSPITAL use this; it is a minimal
-    pair with DOCTOR (a flat hand), distinguished by how many fingers are extended.
-    """
-    c = _all_curls(hand)
-    return float(np.clip(np.mean([1.0 - c[0], 1.0 - c[1], c[2], c[3]]), 0.0, 1.0))
-
-
-def w_confidence(hand: Hand) -> float:
-    """Three fingers (index + middle + ring) extended, pinky curled (the "W" / 3-hand). WATER."""
-    c = _all_curls(hand)
-    return float(np.clip(np.mean([1.0 - c[0], 1.0 - c[1], 1.0 - c[2], c[3]]), 0.0, 1.0))
-
-
-def middle_confidence(hand: Hand) -> float:
-    """Middle finger extended, the other three curled — the SICK "agony" handshape (v1 approx)."""
-    c = _all_curls(hand)
-    return float(np.clip(np.mean([c[0], 1.0 - c[1], c[2], c[3]]), 0.0, 1.0))
-
-
 # --------------------------------------------------------------------------- exact patterns
-# 1 = must be extended, 0 = must be curled, absent = don't care
+# 1 = must be extended, 0 = must be curled, absent = don't care. Scored by _match as the MIN over
+# the listed fingers, so EVERY condition must hold — an open hand can't pass a 2- or 3-finger shape
+# (the averaged scorers used to give an open hand ~0.75 on "w", which let WATER pass for any hand).
 _PATTERNS = {
     "point": dict(index=1, middle=0, ring=0, pinky=0),
     "1": dict(index=1, middle=0, ring=0, pinky=0),
     "v": dict(index=1, middle=1, ring=0, pinky=0),
     "l": dict(thumb=1, index=1, middle=0, ring=0, pinky=0),
     "y": dict(thumb=1, index=0, middle=0, ring=0, pinky=1),
+    # finger-count shapes for the hospital signs (every finger condition required):
+    "n": dict(index=1, middle=1, ring=0, pinky=0),      # 2 fingers — NURSE
+    "h": dict(index=1, middle=1, ring=0, pinky=0),      # H = same 2-finger shape — HOSPITAL
+    "u": dict(index=1, middle=1, ring=0, pinky=0),
+    "w": dict(index=1, middle=1, ring=1, pinky=0),      # 3 fingers — WATER
+    "middle": dict(index=0, middle=1, ring=0, pinky=0), # SICK
 }
 
 
@@ -175,11 +160,6 @@ _DISPATCH = {
     "b": open_confidence,
     "5": open_confidence,
     "claw": claw_confidence,
-    "n": n_confidence,              # 2 fingers — NURSE
-    "h": n_confidence,              # H is the same 2-finger shape — HOSPITAL
-    "u": n_confidence,              # alias
-    "w": w_confidence,              # 3 fingers — WATER
-    "middle": middle_confidence,    # SICK
 }
 
 

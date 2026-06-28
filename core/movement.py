@@ -112,9 +112,11 @@ def repeated_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> 
     signal = np.linalg.norm(a - a.mean(axis=0), axis=1)
 
     # A genuine repeated motion has real AMPLITUDE. Reject jitter / a near-still hand outright —
-    # this is what stops a barely-moving claw from racking up false "cycles" and passing.
+    # this is what stops a barely-moving claw from racking up false "cycles" and passing. The floor
+    # is per-sign (req.min_amplitude_ratio) so deliberate signs like BREATHE can demand a big swing.
+    amp_floor = max(req.min_amplitude_ratio, 1e-6)
     amp_ratio = float(signal.max() - signal.min()) / shoulder_width
-    if amp_ratio < 0.05:
+    if amp_ratio < amp_floor:
         return 0.0
 
     centered = signal - signal.mean()
@@ -132,7 +134,7 @@ def repeated_confidence(actor_traj, shoulder_width: float, req: MovementReq) -> 
     cycles = crossings / 2.0
 
     cycle_score = float(np.clip(cycles / max(req.min_cycles, 1), 0.0, 1.0))
-    amp_score = float(np.clip(amp_ratio / 0.08, 0.0, 1.0))
+    amp_score = float(np.clip(amp_ratio / (amp_floor * 1.6), 0.0, 1.0))
     # Need BOTH enough cycles AND enough amplitude: a tiny tremor with many reversals fails on
     # amplitude; a single big sweep with no reversals fails on cycles.
     return float(min(cycle_score, amp_score))

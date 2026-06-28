@@ -54,7 +54,8 @@ class LocationReq:
     acting_hand: str = DOMINANT
     max_dist_ratio: float = 1.0
     min_dist_ratio: float = 0.0
-    vertical: Optional[str] = None           # "above" | "below" | None
+    vertical: Optional[str] = None           # "above" | "below" (acting vs anchor hand) | None
+    below: Optional[str] = None              # acting hand must be BELOW this body landmark: "mouth"
     required: bool = True
     min_confidence: float = 0.6
 
@@ -86,6 +87,7 @@ class MovementReq:
 
     # repeated
     min_cycles: int = 2
+    min_amplitude_ratio: float = 0.05   # min peak-to-peak swing (shoulder-widths) for a real oscillation
 
     # converge (PAIN): minimum shrinkage of inter-hand gap, in shoulder-widths
     min_approach_ratio: float = 0.15

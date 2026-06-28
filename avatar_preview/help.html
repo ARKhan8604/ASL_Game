@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ASL Avatar — HELP (robot.blend)</title>
+<title>ASL Avatar — HELP (VRM)</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -11,7 +11,7 @@
     font: 14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
   #app { position: fixed; inset: 0; }
   canvas { display: block; }
-  .panel { position: absolute; top: 14px; left: 14px; width: 280px;
+  .panel { position: absolute; top: 14px; left: 14px; width: 270px;
     background: rgba(20,25,33,.86); backdrop-filter: blur(8px);
     border: 1px solid #2a313c; border-radius: 12px; padding: 14px 16px; }
   .panel h1 { font-size: 15px; margin: 0 0 2px; }
@@ -39,7 +39,7 @@
     background: #1d2a16; border: 1px solid #3a5a22; color: #b6e88a; font-size: 11.5px;
     padding: 6px 14px; border-radius: 8px; max-width: 64ch; text-align: center; }
   .err { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-    color: #ff8a8a; font-size: 14px; max-width: 60ch; text-align: center; display: none; }
+    color: #ff8a8a; font-size: 13px; max-width: 70ch; text-align: center; display: none; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -47,9 +47,8 @@
 
 <div class="panel">
   <h1>HELP <span style="color:#6fe39a">●</span></h1>
-  <p class="sub">Your <code>robot.blend</code>, rigged + animated from <code>signs/help.py</code></p>
+  <p class="sub">VRM avatar, posed from <code>signs/help.py</code></p>
   <div class="row"><label>Speed</label><input id="speed" type="range" min="0.25" max="2" step="0.05" value="1"><output id="speedV"></output></div>
-  <div class="row"><label>Auto-rotate</label><input id="spin" type="range" min="0" max="100" step="1" value="0"><output id="spinV"></output></div>
   <div class="btns">
     <button id="replay" class="primary">▶ Replay</button>
     <button id="loop">⟳ Loop: on</button>
@@ -66,14 +65,15 @@
   <pre id="schemaPre"></pre>
 </div>
 
-<div class="warn">Uncalibrated procedural pose — a fluent/Deaf signer should verify before real use (paper Phase&nbsp;6). Robot hands are rigid, so handshape is approximated; the HELP <i>motion</i> is the gated feature.</div>
+<div class="warn">Uncalibrated procedural pose — a fluent/Deaf signer should verify before real use (paper Phase&nbsp;6).</div>
 <div class="phase">Animation: <b id="phaseLbl">loading…</b></div>
 <div class="err" id="err"></div>
 
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.0/lib/three-vrm.module.js"
 }}
 </script>
 
@@ -81,6 +81,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
 /* SIGN DEFINITION SCHEMA — from ASL_Game/signs/help.py (recognition is source of truth). */
 const HELP = {
@@ -97,7 +98,7 @@ document.getElementById('schemaPre').innerHTML = JSON.stringify(HELP, null, 1)
   .replace(/: (true|false|null|-?[0-9.]+)/g, ': <span class="v">$1</span>');
 
 const app = document.getElementById('app');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -107,123 +108,180 @@ app.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0e1116);
 
-const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.01, 100000);
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 100);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-scene.add(new THREE.HemisphereLight(0xdfeaff, 0x2a2a30, 2.4));
-const key = new THREE.DirectionalLight(0xffffff, 3.4);
-key.position.set(1, 2, 1.5); key.castShadow = true;
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0x32323a, 2.0));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(1.5, 3, 2.5); key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.1; key.shadow.camera.far = 20;
+key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 3; key.shadow.camera.bottom = -1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0x88aaff, 1.1); fill.position.set(-2, 1, 1); scene.add(fill);
-const rimL = new THREE.DirectionalLight(0xffd8a8, 0.9); rimL.position.set(0, 1.5, -2); scene.add(rimL);
+const fill = new THREE.DirectionalLight(0x88aaff, 0.7); fill.position.set(-2, 1, 1); scene.add(fill);
 
-let ground;
-let mixer = null, action = null, clock = new THREE.Clock();
-let modelCenter = new THREE.Vector3(), modelRadius = 1;
-let loop = true;
+const ground = new THREE.Mesh(new THREE.CircleGeometry(4, 64),
+  new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+scene.add(new THREE.GridHelper(8, 16, 0x2a3340, 0x1b2129));
 
 const phaseLbl = document.getElementById('phaseLbl');
+const clock = new THREE.Clock();
+let vrm = null, modelCenter = new THREE.Vector3(0, 1, 0), modelRadius = 1, loop = true, speed = 1, t0 = 0;
 
-let actions = [];
-// cache-bust the model so a rebuilt GLB always loads fresh (avoids stale browser cache)
-new GLTFLoader().load('robot_help.glb?t=' + Date.now(), (gltf) => { try {
-  const model = gltf.scene;
-  model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  scene.add(model);
+/* ----------------------------------------------------------------------------
+   POSE SYSTEM — VRM normalized humanoid bones (T-pose rest, +Y up, +Z forward).
+   Each pose maps boneName -> [x,y,z] euler radians. We lerp between poses and
+   apply every frame, then vrm.humanoid.update() maps to the raw skeleton.
+   Finger fist is built from real finger-joint rotations (no mesh hacks).
+---------------------------------------------------------------------------- */
+const D = THREE.MathUtils.degToRad;
 
-  // fit camera + ground to the model's real-world size
-  const box = new THREE.Box3().setFromObject(model);
-  box.getCenter(modelCenter);
-  const size = new THREE.Vector3(); box.getSize(size);
-  modelRadius = Math.max(size.x, size.y, size.z) * 0.5;
+// Arms-at-side rest (from T-pose). Signs verified by probing (see below).
+const POSE_REST = {
+  leftUpperArm:  [0, 0,  D(75)], rightUpperArm: [0, 0, -D(75)],
+  leftLowerArm:  [0, D(10), 0],  rightLowerArm: [0, -D(10), 0],
+};
+// Hands meet front-center at belly (dominant=RIGHT fist resting on LEFT open palm)
+const POSE_TOGETHER = {
+  leftUpperArm:  [0, D(-28), D(70)], leftLowerArm:  [0, D(-80), 0],
+  rightUpperArm: [0, D(28), -D(70)], rightLowerArm: [0, D(80),  0],
+  leftHand: [0,0,0], rightHand: [0,0,0],
+};
+// Both lift up to chest (the HELP "lifting up")
+const POSE_LIFT = {
+  leftUpperArm:  [0, D(-28), D(48)], leftLowerArm:  [0, D(-80), 0],
+  rightUpperArm: [0, D(28), -D(48)], rightLowerArm: [0, D(80),  0],
+  leftHand: [0,0,0], rightHand: [0,0,0],
+};
 
-  ground = new THREE.Mesh(
-    new THREE.CircleGeometry(modelRadius * 4, 64),
-    new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 1 })
-  );
-  ground.rotation.x = -Math.PI / 2; ground.position.y = box.min.y; ground.receiveShadow = true;
-  scene.add(ground);
-  const grid = new THREE.GridHelper(modelRadius * 8, 28, 0x2a3340, 0x1b2129);
-  grid.position.y = box.min.y + 0.01; scene.add(grid);
+const FINGERS = ['Index','Middle','Ring','Little'];
+const SEGS = ['Proximal','Intermediate','Distal'];
 
-  // light distances relative to model
-  key.position.set(modelCenter.x + modelRadius, box.max.y + modelRadius, modelCenter.z + modelRadius * 1.5);
-  key.shadow.camera.near = 0.1; key.shadow.camera.far = modelRadius * 12;
-  const s = modelRadius * 1.6;
-  Object.assign(key.shadow.camera, { left: -s, right: s, top: s, bottom: -s });
-  key.shadow.camera.updateProjectionMatrix();
+function setBone(name, e) {
+  const n = vrm.humanoid.getNormalizedBoneNode(name);
+  if (n) n.rotation.set(e[0], e[1], e[2]);
+}
+function lerpPose(a, b, t) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    const va = a[k] || [0,0,0], vb = b[k] || [0,0,0];
+    setBone(k, [va[0]+(vb[0]-va[0])*t, va[1]+(vb[1]-va[1])*t, va[2]+(vb[2]-va[2])*t]);
+  }
+}
+// Curl the dominant (right) hand into a fist. amount 0..1. Fingers curl about Z,
+// thumb folds across. Signs tuned by probing.
+function setFist(side, amount) {
+  const s = side === 'right' ? 1 : -1;
+  for (const f of FINGERS) {
+    setBone(`${side}${f}Proximal`,     [0, 0, s * amount * D(90)]);
+    setBone(`${side}${f}Intermediate`, [0, 0, s * amount * D(100)]);
+    setBone(`${side}${f}Distal`,       [0, 0, s * amount * D(70)]);
+  }
+  setBone(`${side}ThumbProximal`,     [0, s * amount * D(40), 0]);
+  setBone(`${side}ThumbIntermediate`, [0, s * amount * D(40), 0]);
+  setBone(`${side}ThumbDistal`,       [0, s * amount * D(30), 0]);
+}
+function openHand(side) {
+  for (const f of FINGERS) for (const sg of SEGS) setBone(`${side}${f}${sg}`, [0,0,0]);
+  for (const sg of SEGS) setBone(`${side}Thumb${sg}`, [0,0,0]);
+}
 
+const easeInOut = t => t < .5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+
+// timeline (seconds): rest -> reach(together) -> lift -> hold -> loop
+const T = { reachEnd: 1.1, liftStart: 1.5, liftEnd: 2.4, hold: 3.2 };
+function applyAnim(time) {
+  let phase;
+  if (time < T.reachEnd) {            // rest -> together
+    const k = easeInOut(time / T.reachEnd);
+    lerpPose(POSE_REST, POSE_TOGETHER, k);
+    setFist('right', k);              // form the fist as the hand comes in
+    openHand('left');
+    phase = 'reaching';
+  } else if (time < T.liftStart) {
+    lerpPose(POSE_TOGETHER, POSE_TOGETHER, 0);
+    setFist('right', 1); openHand('left'); phase = 'fist on palm';
+  } else if (time < T.liftEnd) {      // lift up
+    const k = easeInOut((time - T.liftStart) / (T.liftEnd - T.liftStart));
+    lerpPose(POSE_TOGETHER, POSE_LIFT, k);
+    setFist('right', 1); openHand('left'); phase = 'lifting up';
+  } else {                            // hold
+    lerpPose(POSE_LIFT, POSE_LIFT, 0);
+    setFist('right', 1); openHand('left'); phase = 'hold';
+  }
+  phaseLbl.textContent = phase;
+  return time >= T.hold;
+}
+
+const loader = new GLTFLoader();
+loader.register(parser => new VRMLoaderPlugin(parser));
+loader.load('1895101762715499275.vrm?t=' + Date.now(), (gltf) => { try {
+  vrm = gltf.userData.vrm;
+  VRMUtils.rotateVRM0(vrm);                 // VRM0 faces -Z; rotate to face +Z
+  VRMUtils.removeUnnecessaryJoints(gltf.scene);
+  vrm.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+  scene.add(vrm.scene);
+
+  const box = new THREE.Box3().setFromObject(vrm.scene);
+  box.getCenter(modelCenter); const size = new THREE.Vector3(); box.getSize(size);
+  modelRadius = Math.max(size.x, size.y) * 0.5;
+  modelCenter.y = box.min.y + size.y * 0.62;   // focus on upper torso/hands
+  ground.position.y = box.min.y;
   setView('threeq');
 
-  if (gltf.animations && gltf.animations.length) {
-    mixer = new THREE.AnimationMixer(model);
-    actions = gltf.animations.map(c => { const a = mixer.clipAction(c); a.play(); return a; });
-    action = actions[0];
-    phaseLbl.textContent = 'playing HELP (' + gltf.animations.length + ' tracks)';
-  } else {
-    phaseLbl.textContent = 'no animation in GLB';
-  }
-} catch (err) {
-  console.error(err);
-  const el = document.getElementById('err');
-  el.style.display = 'block';
-  el.textContent = 'onLoad error: ' + (err && err.stack ? err.stack : err);
-  phaseLbl.textContent = 'error';
-} }, (xhr) => {
-  if (xhr.total) phaseLbl.textContent = 'loading ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
-}, (e) => {
+  t0 = clock.getElapsedTime();
+  phaseLbl.textContent = 'playing HELP';
+} catch (e) { showErr(e); } }, undefined, (e) => showErr(e));
+
+function showErr(e) {
   console.error(e);
   const el = document.getElementById('err');
-  el.style.display = 'block';
-  el.textContent = 'Failed to load robot_help.glb — run build_help_glb.py first. ' + e;
-  phaseLbl.textContent = 'load error';
-});
+  el.style.display = 'block'; el.textContent = 'Load/pose error:\n' + (e && e.stack ? e.stack : e);
+  phaseLbl.textContent = 'error';
+}
 
 function setView(which) {
-  const c = modelCenter, r = modelRadius;
+  const c = modelCenter, r = Math.max(modelRadius, 0.5), d = r * 3.2;
   controls.target.copy(c);
-  const dist = r * 2.6;
-  if (which === 'front') camera.position.set(c.x, c.y + r * 0.15, c.z + dist);
-  if (which === 'side')  camera.position.set(c.x + dist, c.y + r * 0.15, c.z);
-  if (which === 'threeq')camera.position.set(c.x + dist * 0.7, c.y + r * 0.25, c.z + dist * 0.75);
+  if (which === 'front')  camera.position.set(c.x, c.y + r*0.2, c.z + d);
+  if (which === 'side')   camera.position.set(c.x + d, c.y + r*0.2, c.z);
+  if (which === 'threeq') camera.position.set(c.x + d*0.6, c.y + r*0.3, c.z + d*0.8);
   controls.update();
 }
 
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
-  if (mixer) mixer.update(dt);
+  if (vrm) {
+    const seeking = (window.__seekTime !== undefined && window.__seekTime !== null);
+    const time = seeking ? window.__seekTime : (clock.getElapsedTime() - t0) * speed;
+    const done = applyAnim(time);
+    if (done && loop && !seeking) t0 = clock.getElapsedTime();
+    vrm.humanoid.update();
+    vrm.update(dt);
+  }
   controls.update();
   renderer.render(scene, camera);
 }
 animate();
 
-// debug capture: render at a given normalized animation time and return a JPEG dataURL
+/* probe hooks (used during tuning) */
+window.__r = { renderer, scene, camera, controls, get vrm(){return vrm;}, get center(){return modelCenter;}, get radius(){return modelRadius;} };
+window.__cap = () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/jpeg', 0.7); };
+window.__pause = false;
 
-/* ---- UI ---- */
-const speed = document.getElementById('speed'), speedV = document.getElementById('speedV');
-speed.addEventListener('input', () => { speedV.textContent = (+speed.value).toFixed(2) + '×'; if (mixer) mixer.timeScale = +speed.value; });
-speedV.textContent = '1.00×';
-const spin = document.getElementById('spin'), spinV = document.getElementById('spinV');
-spin.addEventListener('input', () => { spinV.textContent = spin.value + '%'; controls.autoRotate = +spin.value > 0; controls.autoRotateSpeed = +spin.value / 20; });
-spinV.textContent = '0%';
-
-document.getElementById('replay').addEventListener('click', () => { actions.forEach(a => { a.reset(); a.play(); }); });
+/* UI */
+const sp = document.getElementById('speed'), spV = document.getElementById('speedV');
+sp.addEventListener('input', () => { speed = +sp.value; spV.textContent = speed.toFixed(2)+'×'; }); spV.textContent='1.00×';
+document.getElementById('replay').addEventListener('click', () => { t0 = clock.getElapsedTime(); });
 const loopBtn = document.getElementById('loop');
-loopBtn.addEventListener('click', () => {
-  loop = !loop; loopBtn.textContent = '⟳ Loop: ' + (loop ? 'on' : 'off');
-  actions.forEach(a => { a.loop = loop ? THREE.LoopRepeat : THREE.LoopOnce; a.clampWhenFinished = !loop; });
-});
+loopBtn.addEventListener('click', () => { loop = !loop; loopBtn.textContent = '⟳ Loop: ' + (loop?'on':'off'); });
 document.getElementById('front').addEventListener('click', () => setView('front'));
 document.getElementById('side').addEventListener('click', () => setView('side'));
 document.getElementById('threeq').addEventListener('click', () => setView('threeq'));
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 </script>
 </body>
 </html>

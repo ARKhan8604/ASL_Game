@@ -32,6 +32,7 @@ NURSE = Sign(
         anchor=Anchor.OTHER_HAND,
         acting_hand=DOMINANT,
         max_dist_ratio=0.4,
+        below="mouth",              # tap on the forearm in the torso, not up at the face
         required=True,
     ),
     movement=MovementReq(

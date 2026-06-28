@@ -35,6 +35,7 @@ DOCTOR = Sign(
         anchor=Anchor.OTHER_HAND,
         acting_hand=DOMINANT,
         max_dist_ratio=0.4,         # the tapping hand stays close to the non-dominant wrist
+        below="mouth",              # ...and in the torso, not up at the face
         required=True,
     ),
     movement=MovementReq(

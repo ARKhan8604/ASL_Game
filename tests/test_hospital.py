@@ -25,16 +25,27 @@ import pytest
 
 from core.landmarks import Frame, RollingBuffer
 from core.verifier import verify
-from signs import HELP, PAIN, MEDICINE, EMERGENCY
+from signs import (
+    HELP, PAIN, MEDICINE, EMERGENCY,
+    DOCTOR, NURSE, FEVER, WATER, BREATHE, HOSPITAL, DIZZY, SICK,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# (sign object, fixture base name). Each ships a <base>_correct and <base>_confusor fixture.
+# Movement signs: each ships a <base>_correct, <base>_confusor (frozen) and <base>_idle (present
+# but not signing) fixture. SICK is a static pose and is tested separately (TestSick).
 HOSPITAL_SIGNS = [
     (HELP, "help"),
     (PAIN, "pain"),
     (MEDICINE, "medicine"),
     (EMERGENCY, "emergency"),
+    (DOCTOR, "doctor"),
+    (NURSE, "nurse"),
+    (FEVER, "fever"),
+    (WATER, "water"),
+    (BREATHE, "breathe"),
+    (HOSPITAL, "hospital"),
+    (DIZZY, "dizzy"),
 ]
 
 
@@ -119,3 +130,43 @@ class TestIdle:
         assert m is not None and m.score < m.threshold, (
             f"{sign.name} idle movement should be below threshold: {m.score:.2f} >= {m.threshold:.2f}"
         )
+
+
+class TestSick:
+    """SICK is a STATIC two-location pose (the wrist twist isn't detectable from the palm centre),
+    so it can't be gated on movement. Instead its negatives prove it can't pass without BOTH the
+    right handshape AND the right location."""
+
+    def test_correct_pass(self):
+        assert verify(_require("sick", "correct"), SICK).passed, "correct SICK pose should pass"
+
+    def test_wrong_handshape_fails(self):
+        result = verify(_require("sick", "wrongshape"), SICK)
+        assert not result.passed and "handshape_dominant" in result.failing_required, (
+            f"open hands (not middle fingers) must fail SICK on handshape; failing={result.failing_required}"
+        )
+
+    def test_low_hand_fails_on_location(self):
+        result = verify(_require("sick", "lowhand"), SICK)
+        assert not result.passed and "location" in result.failing_required, (
+            f"a hand not up at the forehead must fail SICK on location; failing={result.failing_required}"
+        )
+
+
+# Each sign's correct performance must pass ONLY its own sign — not a different one. The one known,
+# documented exception is MEDICINE ⊃ EMERGENCY (a claw shaken over a palm contains the one-hand
+# EMERGENCY shake), so EMERGENCY is allowed as an extra pass for the medicine fixture.
+_ALLOWED_EXTRA = {"medicine": {"EMERGENCY"}}
+_ALL = dict(HOSPITAL_SIGNS) and {s.name: s for s, _ in HOSPITAL_SIGNS}
+_ALL["SICK"] = SICK
+
+
+@pytest.mark.parametrize("base", [b for _, b in HOSPITAL_SIGNS] + ["sick"])
+def test_no_cross_trigger(base):
+    """A correctly-performed sign must not be accepted as a different sign."""
+    buf = _require(base, "correct")
+    passed = {name for name, sg in _ALL.items() if verify(buf, sg).passed}
+    expected = {base.upper()} | _ALLOWED_EXTRA.get(base, set())
+    assert passed <= expected, (
+        f"{base}_correct passed unexpected signs: {passed - expected}"
+    )

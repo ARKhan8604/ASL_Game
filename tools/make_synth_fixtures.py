@@ -42,9 +42,16 @@ SY = 120.0
 SW = 240.0                      # shoulder width in px
 LS = np.array([CX - SW / 2, SY])
 RS = np.array([CX + SW / 2, SY])
+MOUTH = np.array([CX, SY - 0.45 * SW])   # face landmark (above shoulders) for chin/forehead signs
 N = 60                          # frames per clip
 T = 2.0                         # seconds per clip
 D = 70.0                        # within-hand scale (wrist -> MCP) in px
+
+# Vertical targets (palm-center y) that land a hand in each body-anchor band:
+Y_FOREHEAD = MOUTH[1] - 0.20 * SW         # up at the face (above the mouth)
+Y_CHIN = MOUTH[1] + 0.45 * SW             # at the chin (palm below the mouth)
+Y_CHEST = SY + 0.35 * SW                  # on the chest
+Y_BELLY = SY + 0.90 * SW                  # low on the torso
 
 UP = np.array([0.0, -1.0])
 _MCPS = [INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
@@ -54,11 +61,15 @@ _X_OFF = [-0.27, -0.09, 0.09, 0.27]            # index..pinky horizontal MCP off
 # tip/MCP distance ratio per finger that core.handshape._finger_curl maps to a curl:
 #   ratio 1.6 -> curl 0 (extended);  ratio 1.0 -> curl 1 (curled);  ratio 1.3 -> curl ~0.5 (claw)
 _RATIOS = {
-    "open":  [1.6, 1.6, 1.6, 1.6],
-    "fist":  [1.0, 1.0, 1.0, 1.0],
-    "a":     [1.0, 1.0, 1.0, 1.0],
-    "index": [1.6, 1.0, 1.0, 1.0],
-    "claw":  [1.3, 1.3, 1.3, 1.3],
+    "open":   [1.6, 1.6, 1.6, 1.6],
+    "fist":   [1.0, 1.0, 1.0, 1.0],
+    "a":      [1.0, 1.0, 1.0, 1.0],
+    "index":  [1.6, 1.0, 1.0, 1.0],
+    "claw":   [1.3, 1.3, 1.3, 1.3],
+    "n":      [1.6, 1.6, 1.0, 1.0],   # 2 fingers (index+middle)
+    "h":      [1.6, 1.6, 1.0, 1.0],   # same as n
+    "w":      [1.6, 1.6, 1.6, 1.0],   # 3 fingers (index+middle+ring)
+    "middle": [1.0, 1.6, 1.0, 1.0],   # middle only
 }
 
 # fill (unused-by-scorers) joints so each hand is a plausible 21-point array
@@ -101,7 +112,7 @@ def make_hand(handedness: str, center_target, shape: str) -> Hand:
 
 def _frame(t: float, hands: list[Hand]) -> Frame:
     return Frame(t=t, width=W, height=H, hands=hands,
-                 left_shoulder=LS.copy(), right_shoulder=RS.copy())
+                 left_shoulder=LS.copy(), right_shoulder=RS.copy(), mouth=MOUTH.copy())
 
 
 def _write(name: str, sign_name: str, frames: list[Frame]) -> None:
@@ -185,19 +196,138 @@ def emergency_clip(mode: str) -> list[Frame]:
     return out
 
 
+def _tap_clip(mode: str, dom_shape: str) -> list[Frame]:
+    """DOCTOR / NURSE: dominant hand taps the non-dominant wrist twice (repeated).
+
+    The wrist is held LOW (waist height) — this keeps the pose out of the chest band so it can't
+    be confused with BREATHE (open hands on the chest, repeated).
+    """
+    ndom = np.array([CX + 50.0, Y_BELLY + 10.0])     # the wrist/forearm held low, held still
+    out = []
+    for t in _ts():
+        dy = 25.0 * math.sin(2 * math.pi * 1.5 * t) if mode == "correct" else 0.0
+        dom = np.array([CX + 50.0, Y_BELLY - 10.0 + dy])  # taps toward/away the wrist
+        nd = ndom.copy()
+        if mode == "idle":
+            dom, nd = dom + _jit(), nd + _jit()
+        out.append(_frame(t, [make_hand("Right", dom, dom_shape), make_hand("Left", nd, "open")]))
+    return out
+
+
+def doctor_clip(mode: str) -> list[Frame]:
+    return _tap_clip(mode, "open")
+
+
+def nurse_clip(mode: str) -> list[Frame]:
+    return _tap_clip(mode, "n")
+
+
+def fever_clip(mode: str) -> list[Frame]:
+    out = []
+    for i, t in enumerate(_ts()):
+        fr = _progress(i, mode)
+        dom = np.array([(CX - 50.0) + 100.0 * fr, Y_FOREHEAD])   # sweep across the brow
+        if mode == "idle":
+            dom = dom + _jit()
+        out.append(_frame(t, [make_hand("Right", dom, "open")]))
+    return out
+
+
+def water_clip(mode: str) -> list[Frame]:
+    out = []
+    for t in _ts():
+        dy = 22.0 * math.sin(2 * math.pi * 1.5 * t) if mode == "correct" else 0.0
+        dom = np.array([CX, Y_CHIN + dy])            # taps at the chin
+        if mode == "idle":
+            dom = dom + _jit()
+        out.append(_frame(t, [make_hand("Right", dom, "w")]))
+    return out
+
+
+def breathe_clip(mode: str) -> list[Frame]:
+    # Hands stay clearly SPREAD on the chest (never close together), so the pose can't be confused
+    # with DOCTOR (one hand tapping the other).
+    out = []
+    for t in _ts():
+        dx = 20.0 * math.sin(2 * math.pi * 1.5 * t) if mode == "correct" else 0.0
+        dom = np.array([CX + 80.0 + dx, Y_CHEST])    # right hand breathes out/in
+        nd = np.array([CX - 80.0 - dx, Y_CHEST])     # left hand mirrors
+        if mode == "idle":
+            dom, nd = dom + _jit(), nd + _jit()
+        out.append(_frame(t, [make_hand("Right", dom, "open"), make_hand("Left", nd, "open")]))
+    return out
+
+
+def hospital_clip(mode: str) -> list[Frame]:
+    ndom = np.array([CX, 250.0])                     # the opposite arm, present
+    out = []
+    for i, t in enumerate(_ts()):
+        fr = _progress(i, mode)
+        dom = np.array([LS[0], 110.0 + 50.0 * fr])   # H hand draws a short down-stroke near a shoulder
+        nd = ndom.copy()
+        if mode == "idle":
+            dom, nd = dom + _jit(), nd + _jit()
+        out.append(_frame(t, [make_hand("Right", dom, "h"), make_hand("Left", nd, "open")]))
+    return out
+
+
+def dizzy_clip(mode: str) -> list[Frame]:
+    cx, cy, r = CX, Y_FOREHEAD + 20.0, 32.0          # a small loop in front of the face
+    out = []
+    for t in _ts():
+        ang = 2 * math.pi * (t / T) if mode == "correct" else 0.0
+        dom = np.array([cx + r * math.cos(ang), cy + r * math.sin(ang)])
+        if mode == "idle":
+            dom = dom + _jit()
+        out.append(_frame(t, [make_hand("Right", dom, "claw")]))
+    return out
+
+
+def sick_clip(mode: str) -> list[Frame]:
+    """SICK is a STATIC pose, so its negatives test handshape/location (not movement):
+       correct    — both middle-finger hands, dominant up at the forehead  (PASS)
+       wrongshape — both OPEN hands at the same places                      (FAIL on handshape)
+       lowhand    — middle hands but dominant down at the chest             (FAIL on location)
+    A tiny sub-threshold wobble on the dominant hand makes it the higher-motion one, so the
+    role-by-motion assignment reliably treats the forehead hand as dominant.
+    """
+    dom_shape = "open" if mode == "wrongshape" else "middle"
+    ndom_shape = "open" if mode == "wrongshape" else "middle"
+    dom_y = Y_CHEST if mode == "lowhand" else Y_FOREHEAD
+    out = []
+    for t in _ts():
+        wob = 5.0 * math.sin(2 * math.pi * 1.0 * t)   # sub-threshold; only to fix role assignment
+        dom = np.array([CX + wob, dom_y])
+        nd = np.array([CX, Y_BELLY])
+        out.append(_frame(t, [make_hand("Right", dom, dom_shape), make_hand("Left", nd, ndom_shape)]))
+    return out
+
+
 BUILDERS = {
     "help": ("HELP", help_clip),
     "pain": ("PAIN", pain_clip),
     "medicine": ("MEDICINE", medicine_clip),
     "emergency": ("EMERGENCY", emergency_clip),
+    "doctor": ("DOCTOR", doctor_clip),
+    "nurse": ("NURSE", nurse_clip),
+    "fever": ("FEVER", fever_clip),
+    "water": ("WATER", water_clip),
+    "breathe": ("BREATHE", breathe_clip),
+    "hospital": ("HOSPITAL", hospital_clip),
+    "dizzy": ("DIZZY", dizzy_clip),
 }
 
 
 def main() -> None:
+    # Movement signs: correct / confusor (frozen) / idle (present-but-not-signing).
     for base, (sign_name, builder) in BUILDERS.items():
         _write(f"{base}_correct", sign_name, builder("correct"))
         _write(f"{base}_confusor", sign_name, builder("confusor"))
         _write(f"{base}_idle", sign_name, builder("idle"))
+    # SICK is a static pose — its negatives exercise handshape and location instead of movement.
+    _write("sick_correct", "SICK", sick_clip("correct"))
+    _write("sick_wrongshape", "SICK", sick_clip("wrongshape"))
+    _write("sick_lowhand", "SICK", sick_clip("lowhand"))
 
 
 if __name__ == "__main__":

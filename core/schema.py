@@ -41,6 +41,9 @@ class Anchor(str, Enum):
     NEUTRAL_SPACE = "neutral_space"  # anywhere in the signing space in front of the torso (loose)
     CHEST = "chest"                  # specifically the center of the chest (below the shoulders)
     CHIN = "chin"                    # the hand must REACH chin height (above shoulders) in the window
+    FOREHEAD = "forehead"            # the hand reaches the face/forehead (at or above the mouth)
+    BELLY = "belly"                  # the hand is low on the torso (well below the shoulder line)
+    SHOULDER = "shoulder"            # the hand is near one of the shoulders (e.g. the opposite arm)
 
 
 @dataclass(frozen=True)

@@ -27,21 +27,49 @@ python -m tools.demo_verify --sign HELP           # or PAIN / MEDICINE / EMERGEN
 ## The signs (v1 vocabulary)
 
 Each sign is **data** in `signs/<name>.py`; the generic verifier reads it — there is no per-sign
-code path. Movement is **required** on all four, so none can pass from a frozen pose.
+code path. Movement is **required** on every sign except the two static poses (A, SICK), so a
+frozen pose can't pass them.
 
 | Sign | How to perform it | Movement kind | Gated parameters |
 |------|-------------------|---------------|------------------|
-| **HELP** | A closed **fist** resting on your open flat **palm**; lift the fist straight **up** as a deliberate motion. | `linear` (up) | handshape ×2, location, movement |
-| **PAIN** | Both hands in an **index** point, fingertips toward each other; bring them **together**. | `converge` (two hands closing) | handshape ×2, movement |
-| **MEDICINE** | Open **palm** up; the other hand a **claw**, twisting/rocking **repeatedly** over the palm. | `repeated` (oscillation) | handshape ×2, location, movement |
-| **EMERGENCY** | One **claw** hand raised, **shaken** quickly side to side. | `repeated` (rapid) | handshape, movement |
+| **HELP** | A closed **fist** on your open flat **palm**; lift the fist straight **up**. | `linear` (up) | handshape ×2, location, movement |
+| **PAIN** | Both hands **index** points, fingertips toward each other; bring them **together**. | `converge` | handshape ×2, movement |
+| **MEDICINE** | Open **palm** up; the other a **claw**, twisting **repeatedly** over the palm. | `repeated` | handshape ×2, location, movement |
+| **EMERGENCY** | One **claw** raised, **shaken** quickly side to side. | `repeated` | handshape, movement |
+| **DOCTOR** | Flat hand: **tap** your fingertips on the opposite **wrist**, twice. | `repeated` (taps) | handshape, location, movement |
+| **NURSE** | Two-finger **"N"**: tap on the opposite **wrist**, twice. | `repeated` (taps) | handshape, location, movement |
+| **SICK** | **Middle** fingers out — one at your **forehead**, one at your stomach. | `none` (static pose) | handshape ×2, location |
+| **FEVER** | Open hand: **sweep** the back of it across your **forehead**. | `linear` (sweep) | handshape, location, movement |
+| **WATER** | Three-finger **"W"**: tap on your **chin**, twice. | `repeated` (taps) | handshape, location, movement |
+| **BREATHE** | Both **open** hands on your **chest**: move them **out**, then in. | `repeated` (out/in) | handshape ×2, location, movement |
+| **HOSPITAL** | Two-finger **"H"** by your opposite **shoulder**: draw a small cross. | `linear` (stroke) | handshape, location, movement |
+| **DIZZY** | **Clawed** hand up by your **face**: **circle** it in a small loop. | `circular` | handshape, location, movement |
 | **A** (control) | A closed fist, thumb alongside, held **still**. | `none` | handshape only |
 
-`A` (`signs/letter_a.py`) is the static no-movement control: it is *allowed* to pass while frozen,
-proving the other half of the contract that the four movement signs must fail when frozen.
+The two static signs (`A` in `signs/letter_a.py`, `SICK`) are *allowed* to pass while frozen —
+they prove the other half of the contract, that the **movement** signs must fail when frozen.
+DOCTOR/NURSE leave the non-dominant "wrist/arm" hand present but **ungated** (its handshape is
+whatever); only the tapping hand, the location, and the taps are checked.
 
 > **HELP is a lift.** Because HELP *is* upward motion, settle your hands first, then lift — raising
 > your hands into frame is itself motion, so start from rest and make the lift deliberate.
+
+### v1 rule-based limitations (honest caveats)
+
+These are the spots where hand-written geometry is fragile — flagged here, and the reason the
+project plans to move to a learned classifier (see the [root README](../../README.md) roadmap):
+
+- **DOCTOR vs NURSE** are a **handshape minimal pair** (flat hand vs two-finger "N"), same wrist
+  location and taps. They're separated only by finger count, which is the least-robust thing to
+  detect. **HOSPITAL** also uses the two-finger hand and is separated from NURSE only by location
+  (shoulder vs wrist) and stroke-vs-taps.
+- **SICK**'s wrist *twist* and **DIZZY**'s facial expression aren't recoverable from hand+pose
+  landmarks, so they're **described but not gated** — SICK is gated on its distinctive two-location
+  middle-finger pose, DIZZY on the circle near the face.
+- **MEDICINE ⊃ EMERGENCY**: a claw shaken over a palm contains the one-hand EMERGENCY shake, so a
+  full MEDICINE performance also satisfies EMERGENCY. In play this is harmless (the verifier only
+  checks the *prompted* sign), and it's locked as the single allowed exception in the
+  cross-trigger test.
 
 ## How recognition is kept honest
 
@@ -68,8 +96,13 @@ Kept in the **shared** engine (so they're reusable and tested), but only affect 
 
 - **`CONVERGE` movement kind** (`core/schema.py`, `core/movement.py`) — a two-hand "gap closing"
   detector with a `min_approach_ratio` threshold, used by PAIN.
-- **`index` / `open` / `claw` handshapes** (`core/handshape.py`) — coarse geometric classifiers
-  the hospital signs need beyond COFFEE's `fist`.
+- **Handshapes** (`core/handshape.py`) beyond COFFEE's `fist`: `index`, `open`, `claw`, plus the
+  finger-count shapes `n`/`h` (2 fingers — NURSE/HOSPITAL), `w` (3 fingers — WATER) and `middle`
+  (SICK). `claw` penalises a wide spread of finger curls so a 2-finger "N" can't read as a claw.
+- **Body-location anchors** (`core/schema.py` `Anchor`, scored in `core/verifier.py`): `CHIN`
+  and `CHEST` (Saad's, for THANK_YOU/PLEASE), plus `FOREHEAD` (FEVER/SICK/DIZZY — at/above the
+  mouth landmark), `BELLY` (low on the torso) and `SHOULDER` (near a shoulder — HOSPITAL). All are
+  vertical bands measured in shoulder-widths against the real mouth / shoulder landmarks.
 - **`_best_fit_roles`** (`core/verifier.py`) — when a two-handed sign has *different* handshapes
   (HELP = fist+open, MEDICINE = claw+open), the dominant/non-dominant roles are assigned by best
   **fit** to the declared shapes instead of by which hand moved more. Without this, the role labels
@@ -82,7 +115,7 @@ Kept in the **shared** engine (so they're reusable and tested), but only affect 
 pytest tests/test_hospital.py -v
 ```
 
-Every hospital sign ships **three** fixtures, all replayed through the same verifier:
+Every **movement** sign ships **three** fixtures, all replayed through the same verifier:
 
 | Fixture | Represents | Asserted result |
 |---------|-----------|-----------------|
@@ -91,6 +124,10 @@ Every hospital sign ships **three** fixtures, all replayed through the same veri
 | `<sign>_idle`     | correct handshape held with incidental jitter, **no sign motion** | **FAIL on `movement`** |
 
 The `_idle` fixtures are the regression lock for the cardinal *"passing without performing"* bug.
+The static **SICK** pose can't be gated on movement, so instead it ships `sick_wrongshape` (open
+hands → fail on handshape) and `sick_lowhand` (hand not at the forehead → fail on location). A
+**`test_no_cross_trigger`** test also asserts each sign's correct performance is accepted as *only*
+its own sign (the one allowed exception being MEDICINE ⊃ EMERGENCY).
 
 **Fixtures are deterministic synthetic clips** (geometrically constructed, flagged
 `"synthetic": true`) so the suite is reproducible in CI without a webcam. Regenerate them with:

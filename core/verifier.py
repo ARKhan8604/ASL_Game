@@ -39,6 +39,20 @@ CHIN_DY = 0.45
 CHIN_DY_BAND = 0.18
 CHIN_DY_FALL = 0.17
 
+# Anchor.FOREHEAD — the palm is up at the face/forehead: at or above the mouth landmark. Full
+# credit for any palm at-or-above the mouth (dy <= FOREHEAD_DY_MAX), falloff once it drops to the
+# chest/neck. Picks the forehead/face region and rejects chest/belly hands.
+FOREHEAD_DY_MAX = 0.15
+FOREHEAD_DY_FALL = 0.30
+
+# Anchor.BELLY — the palm is low on the torso, ~0.9 shoulder-widths below the shoulder line.
+BELLY_DY = 0.90
+BELLY_DY_BAND = 0.30
+BELLY_DY_FALL = 0.25
+
+# Anchor.SHOULDER — the palm is near one of the shoulders (e.g. the opposite upper arm).
+SHOULDER_FALL = 0.30
+
 
 @dataclass
 class ParamScore:
@@ -209,6 +223,34 @@ def _score_location(buffer, sign: Sign, roles, shoulder_width) -> float:
             v = 1.0 - max(0.0, abs(dy - CHEST_OFFSET_RATIO) - CHEST_VBAND) / CHEST_VFALL
             h = 1.0 - max(0.0, dx - loc.max_dist_ratio) / 0.35
             vals.append(float(np.clip(min(v, h), 0.0, 1.0)))
+
+        elif loc.anchor == Anchor.FOREHEAD:
+            if f.mouth is None:
+                continue
+            dx = abs(acting.center[0] - f.mouth[0]) / shoulder_width
+            dy = (acting.center[1] - f.mouth[1]) / shoulder_width     # +ve = palm below the mouth
+            v = 1.0 - max(0.0, dy - FOREHEAD_DY_MAX) / FOREHEAD_DY_FALL  # at/above mouth = full credit
+            h = 1.0 - max(0.0, dx - loc.max_dist_ratio) / 0.4
+            vals.append(float(np.clip(min(v, h), 0.0, 1.0)))
+
+        elif loc.anchor == Anchor.BELLY:
+            if f.left_shoulder is None or f.right_shoulder is None:
+                continue
+            mid = (f.left_shoulder + f.right_shoulder) / 2.0
+            dx = abs(acting.center[0] - mid[0]) / shoulder_width
+            dy = (acting.center[1] - mid[1]) / shoulder_width
+            v = 1.0 - max(0.0, abs(dy - BELLY_DY) - BELLY_DY_BAND) / BELLY_DY_FALL
+            h = 1.0 - max(0.0, dx - loc.max_dist_ratio) / 0.4
+            vals.append(float(np.clip(min(v, h), 0.0, 1.0)))
+
+        elif loc.anchor == Anchor.SHOULDER:
+            if f.left_shoulder is None or f.right_shoulder is None:
+                continue
+            d = min(
+                float(np.linalg.norm(acting.center - f.left_shoulder)),
+                float(np.linalg.norm(acting.center - f.right_shoulder)),
+            ) / shoulder_width
+            vals.append(float(np.clip(1.0 - max(0.0, d - loc.max_dist_ratio) / SHOULDER_FALL, 0.0, 1.0)))
 
         else:  # NEUTRAL_SPACE — anywhere in front of the torso, below the shoulders (loose)
             if f.left_shoulder is None or f.right_shoulder is None:

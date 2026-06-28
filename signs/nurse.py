@@ -31,7 +31,7 @@ NURSE = Sign(
     location=LocationReq(
         anchor=Anchor.OTHER_HAND,
         acting_hand=DOMINANT,
-        max_dist_ratio=0.3,
+        max_dist_ratio=0.4,
         required=True,
     ),
     movement=MovementReq(

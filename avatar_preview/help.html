@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ASL Avatar — HELP (robot.blend)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0e1116; color: #e6edf3;
+    font: 14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  .panel { position: absolute; top: 14px; left: 14px; width: 280px;
+    background: rgba(20,25,33,.86); backdrop-filter: blur(8px);
+    border: 1px solid #2a313c; border-radius: 12px; padding: 14px 16px; }
+  .panel h1 { font-size: 15px; margin: 0 0 2px; }
+  .panel .sub { color: #8b97a7; font-size: 12px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 9px 0; }
+  .row label { color: #b9c4d0; font-size: 12.5px; }
+  .row output { color: #6cc6ff; font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
+  input[type=range] { width: 130px; accent-color: #4a93ff; }
+  .btns { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; cursor: pointer; border: 1px solid #313a47; background: #202833;
+    color: #e6edf3; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  button:hover { border-color: #4a93ff; }
+  button.primary { background: #1f6f3f; border-color: #2a8f52; }
+  button.primary:hover { background: #258048; }
+  .schema { position: absolute; right: 14px; top: 14px; width: 318px;
+    background: rgba(20,25,33,.86); border: 1px solid #2a313c; border-radius: 12px; padding: 12px 14px; }
+  .schema .gtitle { color: #7d8794; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .schema pre { margin: 0; font: 11.5px/1.5 Consolas, monospace; color: #c9d4e0; white-space: pre-wrap; }
+  .schema .k { color: #ff9d6c; } .schema .v { color: #6cc6ff; } .schema .s { color: #9fe88d; }
+  .phase { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(20,25,33,.9); border: 1px solid #2a313c; border-radius: 999px;
+    padding: 7px 16px; font-size: 12.5px; }
+  .phase b { color: #6fe39a; }
+  .warn { position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+    background: #1d2a16; border: 1px solid #3a5a22; color: #b6e88a; font-size: 11.5px;
+    padding: 6px 14px; border-radius: 8px; max-width: 64ch; text-align: center; }
+  .err { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    color: #ff8a8a; font-size: 14px; max-width: 60ch; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div class="panel">
+  <h1>HELP <span style="color:#6fe39a">●</span></h1>
+  <p class="sub">Your <code>robot.blend</code>, rigged + animated from <code>signs/help.py</code></p>
+  <div class="row"><label>Speed</label><input id="speed" type="range" min="0.25" max="2" step="0.05" value="1"><output id="speedV"></output></div>
+  <div class="row"><label>Auto-rotate</label><input id="spin" type="range" min="0" max="100" step="1" value="0"><output id="spinV"></output></div>
+  <div class="btns">
+    <button id="replay" class="primary">▶ Replay</button>
+    <button id="loop">⟳ Loop: on</button>
+  </div>
+  <div class="btns">
+    <button id="front">Front</button>
+    <button id="side">Side</button>
+    <button id="threeq">3/4</button>
+  </div>
+</div>
+
+<div class="schema">
+  <div class="gtitle">Sign Definition Schema (mirrors recognition)</div>
+  <pre id="schemaPre"></pre>
+</div>
+
+<div class="warn">Uncalibrated procedural pose — a fluent/Deaf signer should verify before real use (paper Phase&nbsp;6). Robot hands are rigid, so handshape is approximated; the HELP <i>motion</i> is the gated feature.</div>
+<div class="phase">Animation: <b id="phaseLbl">loading…</b></div>
+<div class="err" id="err"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* SIGN DEFINITION SCHEMA — from ASL_Game/signs/help.py (recognition is source of truth). */
+const HELP = {
+  name: "HELP", two_handed: true,
+  dominant:    { kind: "fist", required: true, min_confidence: 0.5 },
+  nondominant: { kind: "open", required: true, min_confidence: 0.5 },
+  location:    { anchor: "other_hand", acting_hand: "dominant", max_dist_ratio: 0.6, required: true },
+  movement:    { kind: "linear", actor: "dominant", direction: [0,-1], min_displacement_ratio: 0.15, required: true },
+  orientation: { hand: "nondominant", facing: "up", required: false },
+};
+document.getElementById('schemaPre').innerHTML = JSON.stringify(HELP, null, 1)
+  .replace(/"([^"]+)":/g, '<span class="k">"$1"</span>:')
+  .replace(/: "([^"]+)"/g, ': <span class="s">"$1"</span>')
+  .replace(/: (true|false|null|-?[0-9.]+)/g, ': <span class="v">$1</span>');
+
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1116);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.01, 100000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0x2a2a30, 2.4));
+const key = new THREE.DirectionalLight(0xffffff, 3.4);
+key.position.set(1, 2, 1.5); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x88aaff, 1.1); fill.position.set(-2, 1, 1); scene.add(fill);
+const rimL = new THREE.DirectionalLight(0xffd8a8, 0.9); rimL.position.set(0, 1.5, -2); scene.add(rimL);
+
+let ground;
+let mixer = null, action = null, clock = new THREE.Clock();
+let modelCenter = new THREE.Vector3(), modelRadius = 1;
+let loop = true;
+
+const phaseLbl = document.getElementById('phaseLbl');
+
+let actions = [];
+// cache-bust the model so a rebuilt GLB always loads fresh (avoids stale browser cache)
+new GLTFLoader().load('robot_help.glb?t=' + Date.now(), (gltf) => { try {
+  const model = gltf.scene;
+  model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(model);
+
+  // fit camera + ground to the model's real-world size
+  const box = new THREE.Box3().setFromObject(model);
+  box.getCenter(modelCenter);
+  const size = new THREE.Vector3(); box.getSize(size);
+  modelRadius = Math.max(size.x, size.y, size.z) * 0.5;
+
+  ground = new THREE.Mesh(
+    new THREE.CircleGeometry(modelRadius * 4, 64),
+    new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2; ground.position.y = box.min.y; ground.receiveShadow = true;
+  scene.add(ground);
+  const grid = new THREE.GridHelper(modelRadius * 8, 28, 0x2a3340, 0x1b2129);
+  grid.position.y = box.min.y + 0.01; scene.add(grid);
+
+  // light distances relative to model
+  key.position.set(modelCenter.x + modelRadius, box.max.y + modelRadius, modelCenter.z + modelRadius * 1.5);
+  key.shadow.camera.near = 0.1; key.shadow.camera.far = modelRadius * 12;
+  const s = modelRadius * 1.6;
+  Object.assign(key.shadow.camera, { left: -s, right: s, top: s, bottom: -s });
+  key.shadow.camera.updateProjectionMatrix();
+
+  setView('threeq');
+
+  if (gltf.animations && gltf.animations.length) {
+    mixer = new THREE.AnimationMixer(model);
+    actions = gltf.animations.map(c => { const a = mixer.clipAction(c); a.play(); return a; });
+    action = actions[0];
+    phaseLbl.textContent = 'playing HELP (' + gltf.animations.length + ' tracks)';
+  } else {
+    phaseLbl.textContent = 'no animation in GLB';
+  }
+} catch (err) {
+  console.error(err);
+  const el = document.getElementById('err');
+  el.style.display = 'block';
+  el.textContent = 'onLoad error: ' + (err && err.stack ? err.stack : err);
+  phaseLbl.textContent = 'error';
+} }, (xhr) => {
+  if (xhr.total) phaseLbl.textContent = 'loading ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
+}, (e) => {
+  console.error(e);
+  const el = document.getElementById('err');
+  el.style.display = 'block';
+  el.textContent = 'Failed to load robot_help.glb — run build_help_glb.py first. ' + e;
+  phaseLbl.textContent = 'load error';
+});
+
+function setView(which) {
+  const c = modelCenter, r = modelRadius;
+  controls.target.copy(c);
+  const dist = r * 2.6;
+  if (which === 'front') camera.position.set(c.x, c.y + r * 0.15, c.z + dist);
+  if (which === 'side')  camera.position.set(c.x + dist, c.y + r * 0.15, c.z);
+  if (which === 'threeq')camera.position.set(c.x + dist * 0.7, c.y + r * 0.25, c.z + dist * 0.75);
+  controls.update();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  if (mixer) mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// debug capture: render at a given normalized animation time and return a JPEG dataURL
+
+/* ---- UI ---- */
+const speed = document.getElementById('speed'), speedV = document.getElementById('speedV');
+speed.addEventListener('input', () => { speedV.textContent = (+speed.value).toFixed(2) + '×'; if (mixer) mixer.timeScale = +speed.value; });
+speedV.textContent = '1.00×';
+const spin = document.getElementById('spin'), spinV = document.getElementById('spinV');
+spin.addEventListener('input', () => { spinV.textContent = spin.value + '%'; controls.autoRotate = +spin.value > 0; controls.autoRotateSpeed = +spin.value / 20; });
+spinV.textContent = '0%';
+
+document.getElementById('replay').addEventListener('click', () => { actions.forEach(a => { a.reset(); a.play(); }); });
+const loopBtn = document.getElementById('loop');
+loopBtn.addEventListener('click', () => {
+  loop = !loop; loopBtn.textContent = '⟳ Loop: ' + (loop ? 'on' : 'off');
+  actions.forEach(a => { a.loop = loop ? THREE.LoopRepeat : THREE.LoopOnce; a.clampWhenFinished = !loop; });
+});
+document.getElementById('front').addEventListener('click', () => setView('front'));
+document.getElementById('side').addEventListener('click', () => setView('side'));
+document.getElementById('threeq').addEventListener('click', () => setView('threeq'));
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

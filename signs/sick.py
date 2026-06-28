@@ -29,8 +29,10 @@ from core.schema import (
 SICK = Sign(
     name="SICK",
     two_handed=True,
-    dominant=HandShapeReq(kind="middle", required=True, min_confidence=0.5),
-    nondominant=HandShapeReq(kind="middle", required=True, min_confidence=0.5),
+    dominant=HandShapeReq(kind="middle", required=True, min_confidence=0.55),
+    # The low (belly) hand often sits near the bottom of the frame and drops out of detection, so
+    # it is required to be PRESENT but its handshape is not gated — the forehead hand carries it.
+    nondominant=HandShapeReq(kind="middle", required=False),
     location=LocationReq(
         anchor=Anchor.FOREHEAD,      # dominant middle finger up at the forehead
         acting_hand=DOMINANT,

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ASL Avatar Preview — EMERGENCY</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0e1116; color: #e6edf3;
+    font: 14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  .panel {
+    position: absolute; top: 14px; left: 14px; width: 290px; max-height: calc(100% - 28px);
+    overflow-y: auto; background: rgba(20,25,33,.86); backdrop-filter: blur(8px);
+    border: 1px solid #2a313c; border-radius: 12px; padding: 14px 16px;
+  }
+  .panel h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .3px; }
+  .panel .sub { color: #8b97a7; font-size: 12px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 9px 0; }
+  .row label { color: #b9c4d0; font-size: 12.5px; }
+  .row output { color: #6cc6ff; font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
+  input[type=range] { width: 130px; accent-color: #ff5b5b; }
+  .group { border-top: 1px solid #232a34; margin-top: 12px; padding-top: 8px; }
+  .group > .gtitle { color: #7d8794; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 4px; }
+  .btns { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; cursor: pointer; border: 1px solid #313a47; background: #202833;
+    color: #e6edf3; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  button:hover { border-color: #4a93ff; }
+  button.primary { background: #b3261e; border-color: #d83a30; }
+  button.primary:hover { background: #c92e25; }
+
+  .schema { position: absolute; right: 14px; top: 14px; width: 320px;
+    background: rgba(20,25,33,.86); border: 1px solid #2a313c; border-radius: 12px; padding: 12px 14px; }
+  .schema .gtitle { color: #7d8794; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .schema pre { margin: 0; font: 11.5px/1.5 "Cascadia Code", Consolas, monospace; color: #c9d4e0; white-space: pre-wrap; }
+  .schema .k { color: #ff9d6c; } .schema .v { color: #6cc6ff; } .schema .s { color: #9fe88d; }
+  .phase { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(20,25,33,.9); border: 1px solid #2a313c; border-radius: 999px;
+    padding: 7px 16px; font-size: 12.5px; letter-spacing: .4px; }
+  .phase b { color: #ff8a8a; }
+  .warn { position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+    background: #3a2410; border: 1px solid #6b4410; color: #ffce8a; font-size: 11.5px;
+    padding: 6px 14px; border-radius: 8px; max-width: 60ch; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div class="panel">
+  <h1>EMERGENCY <span style="color:#ff5b5b">●</span></h1>
+  <p class="sub">Procedural synthesis driven by <code>signs/emergency.py</code></p>
+
+  <div class="group">
+    <div class="gtitle">Movement (REPEATED)</div>
+    <div class="row"><label>Cycles (shakes)</label><input id="cycles" type="range" min="1" max="8" step="1" value="4"><output id="cyclesV"></output></div>
+    <div class="row"><label>Frequency (Hz)</label><input id="freq" type="range" min="1" max="8" step="0.1" value="4"><output id="freqV"></output></div>
+    <div class="row"><label>Amplitude (°)</label><input id="amp" type="range" min="5" max="45" step="1" value="24"><output id="ampV"></output></div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">Handshape (claw / "E")</div>
+    <div class="row"><label>Finger curl</label><input id="curl" type="range" min="0" max="100" step="1" value="58"><output id="curlV"></output></div>
+    <div class="row"><label>Thumb tuck</label><input id="thumb" type="range" min="0" max="100" step="1" value="55"><output id="thumbV"></output></div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">Location</div>
+    <div class="row"><label>Raise height</label><input id="raise" type="range" min="0" max="100" step="1" value="70"><output id="raiseV"></output></div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">Playback</div>
+    <div class="row"><label>Speed</label><input id="speed" type="range" min="0.25" max="2" step="0.05" value="1"><output id="speedV"></output></div>
+  </div>
+
+  <div class="btns">
+    <button id="replay" class="primary">▶ Replay</button>
+    <button id="loop">⟳ Loop: on</button>
+  </div>
+</div>
+
+<div class="schema">
+  <div class="gtitle">Sign Definition Schema (mirrors recognition)</div>
+  <pre id="schemaPre"></pre>
+</div>
+
+<div class="warn">Uncalibrated procedural approximation — a fluent/Deaf signer must verify before any real use (paper Phase&nbsp;6 quality gate). EMERGENCY is safety-critical.</div>
+
+<div class="phase">Phase: <b id="phaseLbl">idle</b> · cycle <b id="cycLbl">0</b></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================================================================
+   SIGN DEFINITION SCHEMA — copied 1:1 from ASL_Game/signs/emergency.py
+   The paper's core rule (Phase 5/6): the expressive avatar must consume the
+   SAME schema the receptive verifier uses, to prevent "bilateral" error.
+   ========================================================================== */
+const EMERGENCY = {
+  name: "EMERGENCY",
+  two_handed: false,
+  dominant:    { kind: "claw", required: true, min_confidence: 0.50 },
+  nondominant: null,
+  location:    { anchor: "neutral_space", acting_hand: "dominant", max_dist_ratio: 1.5, required: false },
+  movement:    { kind: "repeated", actor: "dominant", min_cycles: 3, min_duration_s: 0.5, required: true },
+};
+
+// render the schema into the side panel
+document.getElementById('schemaPre').innerHTML = JSON.stringify(EMERGENCY, null, 1)
+  .replace(/"([^"]+)":/g, '<span class="k">"$1"</span>:')
+  .replace(/: "([^"]+)"/g, ': <span class="s">"$1"</span>')
+  .replace(/: (true|false|null|[0-9.]+)/g, ': <span class="v">$1</span>');
+
+/* ============================================================================
+   SCENE
+   ========================================================================== */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1116);
+scene.fog = new THREE.Fog(0x0e1116, 6, 14);
+
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0.1, 1.5, 4.7);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.3, 0);
+controls.enableDamping = true;
+controls.update();
+
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202028, 1.0));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(2.5, 4, 3); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 1; key.shadow.camera.far = 12;
+key.shadow.camera.left = -3; key.shadow.camera.right = 3;
+key.shadow.camera.top = 3; key.shadow.camera.bottom = -3;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x6688ff, 0.6); rim.position.set(-3, 2, -2); scene.add(rim);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(6, 64),
+  new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(12, 24, 0x2a3340, 0x1b2129); grid.position.y = 0.001; scene.add(grid);
+
+/* ============================================================================
+   STYLIZED AVATAR  (paper Phase 1: stylized, not photoreal, to dodge the
+   uncanny valley). Built from primitives so the HAND can actually articulate
+   into the claw/"E" handshape that rigid robot geometry cannot.
+   ========================================================================== */
+const skin = new THREE.MeshStandardMaterial({ color: 0xe9b894, roughness: 0.7, metalness: 0.0 });
+const cloth = new THREE.MeshStandardMaterial({ color: 0x2b6cb0, roughness: 0.9 });
+const dark  = new THREE.MeshStandardMaterial({ color: 0x1f2733, roughness: 0.9 });
+
+function box(w, h, d, mat) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.castShadow = true; return m; }
+
+const avatar = new THREE.Group(); scene.add(avatar);
+
+// torso + head, so "raised to neutral space" reads spatially
+const torso = box(0.62, 0.78, 0.32, cloth); torso.position.y = 1.18; avatar.add(torso);
+const neck = box(0.13, 0.1, 0.13, skin); neck.position.y = 1.62; avatar.add(neck);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 24), skin);
+head.castShadow = true; head.position.y = 1.82; avatar.add(head);
+const browL = box(0.09, 0.02, 0.03, dark); browL.position.set(-0.07, 1.88, 0.18); avatar.add(browL);
+const browR = browL.clone(); browR.position.x = 0.07; avatar.add(browR);
+
+/* ---- DOMINANT ARM (right). Hierarchy mirrors the paper's chain:
+        shoulder → upperArm → elbow → forearm → wrist → fingers ---------- */
+const SHOULDER = new THREE.Group(); SHOULDER.position.set(0.34, 1.52, 0); avatar.add(SHOULDER);
+const upperArm = box(0.12, 0.42, 0.12, skin); upperArm.position.y = -0.21; SHOULDER.add(upperArm);
+
+const ELBOW = new THREE.Group(); ELBOW.position.y = -0.42; SHOULDER.add(ELBOW);
+const forearm = box(0.105, 0.40, 0.105, skin); forearm.position.y = -0.20; ELBOW.add(forearm);
+
+const WRIST = new THREE.Group(); WRIST.position.y = -0.40; ELBOW.add(WRIST);
+const palm = box(0.13, 0.15, 0.07, skin); palm.position.y = 0.075; WRIST.add(palm);
+
+// fingers: local +Y = extended; curl = rotate joints about local X (toward palm normal -Z)
+const fingerMat = skin;
+function makeDigit(parent, base, segLens, w) {
+  const joints = []; let cur = parent; let prev = 0;
+  segLens.forEach((len, i) => {
+    const j = new THREE.Group();
+    j.position.set(0, i === 0 ? 0 : prev, 0);
+    if (i === 0) j.position.copy(base);
+    cur.add(j);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, len, w), fingerMat);
+    m.castShadow = true; m.position.y = len / 2; j.add(m);
+    // soft knuckle
+    const k = new THREE.Mesh(new THREE.SphereGeometry(w * 0.62, 12, 10), fingerMat);
+    k.castShadow = true; j.add(k);
+    joints.push(j); cur = j; prev = len;
+  });
+  return joints;
+}
+
+const palmTop = 0.15, fw = 0.032, gap = 0.034;
+const fingers = [];
+const xs = [-0.045, -0.015, 0.015, 0.045];           // index, middle, ring, pinky
+const lens = [[0.075,0.05,0.04],[0.082,0.055,0.043],[0.078,0.052,0.04],[0.062,0.042,0.034]];
+xs.forEach((x, i) => fingers.push(makeDigit(WRIST, new THREE.Vector3(x, palmTop, 0), lens[i], fw)));
+
+// thumb: rooted on the radial side, splays out in X then curls across the palm
+const THUMB_ROOT = new THREE.Group(); THUMB_ROOT.position.set(-0.07, 0.04, 0.02); WRIST.add(THUMB_ROOT);
+THUMB_ROOT.rotation.z = 0.7;
+const thumb = makeDigit(THUMB_ROOT, new THREE.Vector3(0, 0, 0), [0.06, 0.05], 0.036);
+
+/* Apply the claw/"E" handshape: fingers clearly curled but NOT fully closed,
+   thumb tucked across (core/handshape.py: "claw — E-hand / bent-5"). */
+function setHandShape(curl01, thumb01) {
+  const c = curl01;                          // 0..1
+  const perJoint = [0.9, 1.15, 1.0];         // MCP, PIP, DIP weights
+  fingers.forEach(f => f.forEach((j, i) => { j.rotation.x = -c * 1.45 * perJoint[i]; }));
+  thumb.forEach((j, i) => { j.rotation.x = -thumb01 * 0.9; });
+  THUMB_ROOT.rotation.x = -thumb01 * 0.7;
+}
+
+/* ---- NON-DOMINANT ARM: static, relaxed at side (sign is one-handed) ---- */
+const SH_L = new THREE.Group(); SH_L.position.set(-0.34, 1.52, 0); avatar.add(SH_L);
+SH_L.rotation.z = 0.12;
+const uaL = box(0.12, 0.42, 0.12, skin); uaL.position.y = -0.21; SH_L.add(uaL);
+const elL = new THREE.Group(); elL.position.y = -0.42; SH_L.add(elL); elL.rotation.x = 0.25;
+const faL = box(0.105, 0.40, 0.105, skin); faL.position.y = -0.20; elL.add(faL);
+const haL = box(0.13, 0.16, 0.07, skin); haL.position.y = -0.48; elL.add(haL);
+
+/* ============================================================================
+   ANIMATION  — applies the paper's exact math:
+     · easeInOutSine on the "raise" (biological easing, Phase 3)
+     · sine oscillation for the REPEATED side-to-side shake (Phase 3),
+       run for `min_cycles` cycles at `freq` Hz  (schema-driven, Phase 5)
+   Rest pose: arm hangs down (SHOULDER.rotation.x ≈ 0).
+   Raised pose: forearm up beside the head, elbow bent ~90°.
+   ========================================================================== */
+const easeInOutSine = t => -(Math.cos(Math.PI * t) - 1) / 2;
+
+const P = { RAISE: 'raise', SHAKE: 'shake', HOLD: 'hold', LOWER: 'lower' };
+const ui = {
+  cycles: 4, freq: 4, amp: 24, curl: 0.58, thumb: 0.55, raise: 0.70, speed: 1, loop: true,
+};
+let phase = P.RAISE, t0 = performance.now() / 1000, cycleShown = 0;
+
+const RAISE_T = 0.45;     // seconds to raise
+const HOLD_T  = 0.5;      // seconds to hold after shaking
+const LOWER_T = 0.45;
+
+const phaseLbl = document.getElementById('phaseLbl');
+const cycLbl   = document.getElementById('cycLbl');
+
+function poseRest() {
+  SHOULDER.rotation.set(0, 0, 0.08);
+  ELBOW.rotation.set(0, 0, 0);
+  WRIST.rotation.set(0, 0, 0);
+}
+function poseRaised(k) {
+  // k = 0 rest … 1 fully raised. Abduct upper arm up-and-out, fold forearm so the
+  // hand ends up beside the head (the classic raised "flash" position).
+  const abduct = k * (2.05 + ui.raise * 0.5);          // shoulder roll: swing arm up & out (+X)
+  SHOULDER.rotation.set(-k * 0.35, 0, 0.08 + abduct);  // slight forward pitch + big abduction
+  ELBOW.rotation.set(0, 0, -k * 0.95);                 // bend forearm inward toward head
+  WRIST.rotation.set(0, 0, 0);
+}
+
+function startCycle() { phase = P.RAISE; t0 = performance.now() / 1000; cycleShown = 0; }
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  const now = performance.now() / 1000;
+  const tt = (now - t0) * ui.speed;
+
+  setHandShape(ui.curl, ui.thumb);
+
+  if (phase === P.RAISE) {
+    const k = Math.min(tt / RAISE_T, 1);
+    poseRaised(easeInOutSine(k));
+    if (k >= 1) { phase = P.SHAKE; t0 = now; }
+  } else if (phase === P.SHAKE) {
+    poseRaised(1);
+    // total shake duration = max(min_duration_s, cycles/freq)
+    const dur = Math.max(EMERGENCY.movement.min_duration_s, ui.cycles / ui.freq);
+    const k = Math.min(tt / dur, 1);
+    const osc = Math.sin(2 * Math.PI * ui.freq * tt);
+    // side-to-side rock: wrist roll + a little forearm sway (the "flash" motion)
+    const ampR = THREE.MathUtils.degToRad(ui.amp);
+    WRIST.rotation.z = osc * ampR;
+    ELBOW.rotation.z = osc * ampR * 0.35;
+    cycleShown = Math.min(ui.cycles, Math.floor(tt * ui.freq));
+    if (k >= 1) { phase = P.HOLD; t0 = now; WRIST.rotation.z = 0; ELBOW.rotation.z = 0; }
+  } else if (phase === P.HOLD) {
+    poseRaised(1);
+    if (tt >= HOLD_T) {
+      if (ui.loop) { phase = P.LOWER; t0 = now; }
+    }
+  } else if (phase === P.LOWER) {
+    const k = Math.min(tt / LOWER_T, 1);
+    poseRaised(easeInOutSine(1 - k));
+    if (k >= 1) startCycle();
+  }
+
+  phaseLbl.textContent = phase;
+  cycLbl.textContent = phase === P.SHAKE ? cycleShown : (phase === P.HOLD ? ui.cycles : 0);
+  renderer.render(scene, camera);
+}
+poseRest();
+startCycle();
+animate();
+
+/* ============================================================================
+   UI WIRING
+   ========================================================================== */
+function bind(id, key, fmt, transform) {
+  const el = document.getElementById(id), out = document.getElementById(id + 'V');
+  const upd = () => {
+    let v = parseFloat(el.value);
+    ui[key] = transform ? transform(v) : v;
+    out.textContent = fmt(v);
+  };
+  el.addEventListener('input', upd); upd();
+}
+bind('cycles', 'cycles', v => v, v => v);
+bind('freq',   'freq',   v => v.toFixed(1) + ' Hz');
+bind('amp',    'amp',    v => v + '°');
+bind('curl',   'curl',   v => v + '%', v => v / 100);
+bind('thumb',  'thumb',  v => v + '%', v => v / 100);
+bind('raise',  'raise',  v => v + '%', v => v / 100);
+bind('speed',  'speed',  v => v.toFixed(2) + '×');
+
+document.getElementById('replay').addEventListener('click', startCycle);
+const loopBtn = document.getElementById('loop');
+loopBtn.addEventListener('click', () => {
+  ui.loop = !ui.loop; loopBtn.textContent = '⟳ Loop: ' + (ui.loop ? 'on' : 'off');
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

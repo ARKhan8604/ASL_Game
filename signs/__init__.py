@@ -22,16 +22,33 @@ from signs.help import HELP
 from signs.pain import PAIN
 from signs.medicine import MEDICINE
 from signs.emergency import EMERGENCY
+from signs.doctor import DOCTOR
+from signs.nurse import NURSE
+from signs.sick import SICK
+from signs.fever import FEVER
+from signs.water import WATER
+from signs.breathe import BREATHE
+from signs.hospital import HOSPITAL
+from signs.dizzy import DIZZY
 
-SIGNS = {s.name: s for s in (
+# Hospital vocabulary, in a teaching-ish order (used by the scenario's patient queue).
+HOSPITAL_SIGNS = (
+    HELP, PAIN, MEDICINE, EMERGENCY,
+    DOCTOR, NURSE, SICK, FEVER, WATER, BREATHE, HOSPITAL, DIZZY,
+)
+
+# Coffee-shop vocabulary (used by that scenario's lessons).
+COFFEE_SIGNS = (
     COFFEE, PLEASE, THANK_YOU, HELLO, WANT, YES,
     LETTER_A, LETTER_B, LETTER_L, LETTER_V, LETTER_Y, YOU,
-    HELP, PAIN, MEDICINE, EMERGENCY,
-)}
+)
+
+SIGNS = {s.name: s for s in (*COFFEE_SIGNS, *HOSPITAL_SIGNS)}
 
 __all__ = [
     "COFFEE", "PLEASE", "THANK_YOU", "HELLO", "WANT", "YES",
     "LETTER_A", "LETTER_B", "LETTER_L", "LETTER_V", "LETTER_Y", "YOU",
     "HELP", "PAIN", "MEDICINE", "EMERGENCY",
-    "SIGNS",
+    "DOCTOR", "NURSE", "SICK", "FEVER", "WATER", "BREATHE", "HOSPITAL", "DIZZY",
+    "COFFEE_SIGNS", "HOSPITAL_SIGNS", "SIGNS",
 ]

@@ -114,8 +114,38 @@ def claw_confidence(hand: Hand) -> float:
     Used for MEDICINE and EMERGENCY. Generously scored; the repeated-motion detector carries the
     discriminating weight for those signs, so the handshape only confirms the hand is closed-ish.
     """
-    m = float(np.mean(_all_curls(hand)))
-    return float(np.clip((m - 0.25) / 0.35, 0.0, 1.0))   # 0 at flat, saturates ~0.60
+    curls = _all_curls(hand)
+    m = float(np.mean(curls))
+    base = float(np.clip((m - 0.25) / 0.35, 0.0, 1.0))   # 0 at flat, saturates ~0.60
+    # A claw has ALL fingers similarly (partly) curled. A wide SPREAD of curls means some fingers
+    # are fully out and some fully in — that's a finger-counting shape (n / w / index), not a claw.
+    # Penalising spread stops a 2-finger "n" hand (mean curl ~0.5) from reading as a claw.
+    spread = float(np.std(curls))
+    penalty = float(np.clip(1.0 - max(0.0, spread - 0.15) / 0.35, 0.0, 1.0))
+    return float(base * penalty)
+
+
+def n_confidence(hand: Hand) -> float:
+    """Two fingers (index + middle) extended, ring + pinky curled (the "N"/"U"/"H" family).
+
+    v1 approximation: the real N/H thumb details aren't reliably detectable, so we recognise these
+    by FINGER COUNT — exactly two extended fingers. NURSE and HOSPITAL use this; it is a minimal
+    pair with DOCTOR (a flat hand), distinguished by how many fingers are extended.
+    """
+    c = _all_curls(hand)
+    return float(np.clip(np.mean([1.0 - c[0], 1.0 - c[1], c[2], c[3]]), 0.0, 1.0))
+
+
+def w_confidence(hand: Hand) -> float:
+    """Three fingers (index + middle + ring) extended, pinky curled (the "W" / 3-hand). WATER."""
+    c = _all_curls(hand)
+    return float(np.clip(np.mean([1.0 - c[0], 1.0 - c[1], 1.0 - c[2], c[3]]), 0.0, 1.0))
+
+
+def middle_confidence(hand: Hand) -> float:
+    """Middle finger extended, the other three curled — the SICK "agony" handshape (v1 approx)."""
+    c = _all_curls(hand)
+    return float(np.clip(np.mean([c[0], 1.0 - c[1], c[2], c[3]]), 0.0, 1.0))
 
 
 # --------------------------------------------------------------------------- exact patterns
@@ -145,6 +175,11 @@ _DISPATCH = {
     "b": open_confidence,
     "5": open_confidence,
     "claw": claw_confidence,
+    "n": n_confidence,              # 2 fingers — NURSE
+    "h": n_confidence,              # H is the same 2-finger shape — HOSPITAL
+    "u": n_confidence,              # alias
+    "w": w_confidence,              # 3 fingers — WATER
+    "middle": middle_confidence,    # SICK
 }
 
 

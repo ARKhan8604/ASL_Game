@@ -24,7 +24,10 @@ from core.capture import Capture
 from core.landmarks import HandStabilizer, RollingBuffer
 from core.verifier import movement_debug, verify
 from scenarios.hospital_shop.scene import HospitalScene
-from signs import HELP, PAIN, MEDICINE, EMERGENCY
+from signs import (
+    HELP, PAIN, MEDICINE, EMERGENCY,
+    DOCTOR, NURSE, SICK, FEVER, WATER, BREATHE, HOSPITAL, DIZZY,
+)
 
 SUCCESS_SECONDS = 2.0
 # Flicker-tolerant debounce: success fires when the sign verifies as passed on at least
@@ -40,6 +43,14 @@ PATIENTS = [
     (PAIN, "Where's the PAIN?", "Point both index fingers and move them TOWARD each other"),
     (MEDICINE, "Give the MEDICINE", "Twist your fingertips on your open palm, back and forth"),
     (EMERGENCY, "It's an EMERGENCY!", "Make a claw and SHAKE it quickly, side to side"),
+    (DOCTOR, "Call the DOCTOR", "Flat hand: tap your fingertips on the opposite wrist, twice"),
+    (NURSE, "Call the NURSE", "Two fingers (N): tap them on the opposite wrist, twice"),
+    (SICK, "The patient is SICK", "Middle fingers out: one at your forehead, one at your stomach"),
+    (FEVER, "Check for FEVER", "Open hand: sweep the back of it across your forehead"),
+    (WATER, "The patient needs WATER", "Three fingers (W): tap them on your chin, twice"),
+    (BREATHE, "Tell them to BREATHE", "Both open hands on your chest: move them out, then in"),
+    (HOSPITAL, "Go to the HOSPITAL", "Two fingers (H) near your opposite shoulder: draw a small cross"),
+    (DIZZY, "The patient feels DIZZY", "Clawed hand up by your face: circle it in a small loop"),
 ]
 
 

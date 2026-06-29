@@ -24,48 +24,40 @@ You can also exercise a single sign on the shared scorecard:
 python -m tools.demo_verify --sign HELP           # or PAIN / MEDICINE / EMERGENCY / LETTER_A
 ```
 
-## The signs (v1 vocabulary)
+## The signs
 
 Each sign is **data** in `signs/<name>.py`; the generic verifier reads it — there is no per-sign
-code path. Movement is **required** on every sign except the two static poses (A, SICK), so a
-frozen pose can't pass them.
+code path. **v1 ships the 8 signs below**, each calibrated against a real recording of the signer
+(`tests/fixtures/<sign>_real.json`). Movement is **required** except on the static "reach" poses
+(WATER), which a frozen pose is *allowed* to pass.
 
 | Sign | How to perform it | Movement kind | Gated parameters |
 |------|-------------------|---------------|------------------|
 | **HELP** | A closed **fist** on your open flat **palm**; lift the fist straight **up**. | `linear` (up) | handshape ×2, location, movement |
 | **PAIN** | Both hands **index** points, fingertips toward each other; bring them **together**. | `converge` | handshape ×2, movement |
-| **MEDICINE** | Open **palm** up; the other a **claw**, twisting **repeatedly** over the palm. | `repeated` | handshape ×2, location, movement |
+| **MEDICINE** | Open hand over your other **palm**, **twisting** back and forth. | `repeated` | handshape ×2, location, movement |
 | **EMERGENCY** | One **claw** raised, **shaken** quickly side to side. | `repeated` | handshape, movement |
-| **DOCTOR** | Flat hand: **tap** your fingertips on the opposite **wrist**, twice. | `repeated` (taps) | handshape, location, movement |
-| **NURSE** | Two-finger **"N"**: tap on the opposite **wrist**, twice. | `repeated` (taps) | handshape, location, movement |
-| **SICK** | **Middle** fingers out — one at your **forehead**, one at your stomach. | `none` (static pose) | handshape ×2, location |
-| **FEVER** | Open hand: **sweep** the back of it across your **forehead**. | `linear` (sweep) | handshape, location, movement |
-| **WATER** | Three-finger **"W"**: tap on your **chin**, twice. | `repeated` (taps) | handshape, location, movement |
-| **BREATHE** | Both **open** hands on your **chest**: move them **out**, then in. | `repeated` (out/in) | handshape ×2, location, movement |
+| **FEVER** | Open hand: **sweep** it across your **forehead**. | `linear` (sweep) | handshape, location, movement |
+| **WATER** | Three-finger **"W"** held at your **chin** (static reach). | `none` (static) | handshape, location |
 | **HOSPITAL** | Two-finger **"H"** by your opposite **shoulder**: draw a small cross. | `linear` (stroke) | handshape, location, movement |
-| **DIZZY** | **Clawed** hand up by your **face**: **circle** it in a small loop. | `circular` | handshape, location, movement |
-| **A** (control) | A closed fist, thumb alongside, held **still**. | `none` | handshape only |
-
-The two static signs (`A` in `signs/letter_a.py`, `SICK`) are *allowed* to pass while frozen —
-they prove the other half of the contract, that the **movement** signs must fail when frozen.
-DOCTOR/NURSE leave the non-dominant "wrist/arm" hand present but **ungated** (its handshape is
-whatever); only the tapping hand, the location, and the taps are checked.
+| **DIZZY** | Open hand up by your **face**: **circle** it in a loop. | `circular` | handshape, location, movement |
 
 > **HELP is a lift.** Because HELP *is* upward motion, settle your hands first, then lift — raising
 > your hands into frame is itself motion, so start from rest and make the lift deliberate.
 
-### v1 rule-based limitations (honest caveats)
+### Deferred to the learned classifier — DOCTOR, NURSE, SICK, BREATHE
 
-These are the spots where hand-written geometry is fragile — flagged here, and the reason the
-project plans to move to a learned classifier (see the [root README](../../README.md) roadmap):
+These four are defined (`signs/doctor.py`, `nurse.py`, `sick.py`, `breathe.py`) and recorded, but
+**not** in the v1 patient queue: rule-based geometry hit its ceiling on them, proven by the real
+recordings. They're the seed cases for the planned learned handshape classifier (see the
+[root README](../../README.md) roadmap).
 
-- **DOCTOR vs NURSE** are a **handshape minimal pair** (flat hand vs two-finger "N"), same wrist
-  location and taps. They're separated only by finger count, which is the least-robust thing to
-  detect. **HOSPITAL** also uses the two-finger hand and is separated from NURSE only by location
-  (shoulder vs wrist) and stroke-vs-taps.
-- **SICK**'s wrist *twist* and **DIZZY**'s facial expression aren't recoverable from hand+pose
-  landmarks, so they're **described but not gated** — SICK is gated on its distinctive two-location
-  middle-finger pose, DIZZY on the circle near the face.
+- **NURSE** (two-finger "N") and **SICK** (lone middle finger) read as an **open hand** from this
+  signer — MediaPipe can't resolve the folded fingers, so the distinguishing handshape is
+  undetectable (SICK's "middle" maxes at ~0.28).
+- **DOCTOR** (flat-hand wrist tap) is then indistinguishable from NURSE/MEDICINE — all open-hand
+  taps near the other hand.
+- **BREATHE**'s slow out/in doesn't complete a cycle inside the live ~1.5s window.
 - **MEDICINE ⊃ EMERGENCY**: a claw shaken over a palm contains the one-hand EMERGENCY shake, so a
   full MEDICINE performance also satisfies EMERGENCY. In play this is harmless (the verifier only
   checks the *prompted* sign), and it's locked as the single allowed exception in the

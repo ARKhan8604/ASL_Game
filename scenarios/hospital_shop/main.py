@@ -24,10 +24,7 @@ from core.capture import Capture
 from core.landmarks import HandStabilizer, RollingBuffer
 from core.verifier import movement_debug, verify
 from scenarios.hospital_shop.scene import HospitalScene
-from signs import (
-    HELP, PAIN, MEDICINE, EMERGENCY,
-    DOCTOR, NURSE, SICK, FEVER, WATER, BREATHE, HOSPITAL, DIZZY,
-)
+from signs import HELP, PAIN, MEDICINE, EMERGENCY, FEVER, WATER, HOSPITAL, DIZZY
 
 SUCCESS_SECONDS = 2.0
 # Flicker-tolerant debounce: success fires when the sign verifies as passed on at least
@@ -38,19 +35,18 @@ PASS_WINDOW = 0.6
 PASS_MIN_FRAMES = 4
 
 # The patient queue: (sign, banner title, how-to instruction). Cycles forever.
+# v1 ships the 8 signs that recognise reliably (calibrated to real recordings). DOCTOR, NURSE,
+# SICK and BREATHE are at the rule-based ceiling (the signer's hand reads "open" for the
+# distinguishing shapes) — their definitions and recordings are kept for the learned classifier.
 PATIENTS = [
     (HELP, "A patient needs HELP", "Rest your FIST on your open palm, then lift the fist straight UP"),
     (PAIN, "Where's the PAIN?", "Point both index fingers and move them TOWARD each other"),
-    (MEDICINE, "Give the MEDICINE", "Twist your fingertips on your open palm, back and forth"),
+    (MEDICINE, "Give the MEDICINE", "Open hand over your other palm: twist it back and forth"),
     (EMERGENCY, "It's an EMERGENCY!", "Make a claw and SHAKE it quickly, side to side"),
-    (DOCTOR, "Call the DOCTOR", "Flat hand: tap your fingertips on the opposite wrist, twice"),
-    (NURSE, "Call the NURSE", "Two fingers (N): tap them on the opposite wrist, twice"),
-    (SICK, "The patient is SICK", "Middle fingers out: one at your forehead, one at your stomach"),
-    (FEVER, "Check for FEVER", "Open hand: sweep the back of it across your forehead"),
-    (WATER, "The patient needs WATER", "Three fingers (W): tap them on your chin, twice"),
-    (BREATHE, "Tell them to BREATHE", "Both open hands on your chest: move them out, then in"),
+    (FEVER, "Check for FEVER", "Open hand: sweep it across your forehead"),
+    (WATER, "The patient needs WATER", "Three fingers (W): hold them at your chin"),
     (HOSPITAL, "Go to the HOSPITAL", "Two fingers (H) near your opposite shoulder: draw a small cross"),
-    (DIZZY, "The patient feels DIZZY", "Clawed hand up by your face: circle it in a small loop"),
+    (DIZZY, "The patient feels DIZZY", "Open hand up by your face: circle it in a loop"),
 ]
 
 

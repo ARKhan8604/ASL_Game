@@ -1,49 +1,41 @@
-# Avatar preview — procedural ASL sign on the robot avatar
+# Avatar preview — procedural ASL sign (HELP)
 
-A small proof-of-concept that drives **your `D:\robot.blend`** to perform an ASL sign in the
-browser, using the **same Sign Definition Schema** the recognition engine uses (`signs/*.py`).
-This is the "expressive avatar" side of the paper's pipeline, scoped down to one sign.
+A proof-of-concept that drives a rigged avatar to perform an ASL sign in the browser, posed
+directly from the **same Sign Definition Schema** the recognition engine uses (`signs/*.py`).
+This is the "expressive avatar" side of the paper's pipeline, scoped to one sign.
 
-Currently implemented: **HELP** (`signs/help.py`).
+## Current build — VRM avatar (recommended)
+- **`help.html`** — loads the VRM humanoid with `@pixiv/three-vrm` and poses it procedurally at
+  runtime. The avatar performs **HELP**: dominant **fist** rests on the open non-dominant palm,
+  then both hands **lift up**.
+- **`1895101762715499275.vrm`** — the avatar (VRM 0.x, full humanoid skeleton incl. all finger
+  joints). Served alongside `help.html`.
 
-## Files
-- `build_help_glb.py` — headless Blender script. Rigs the robot's arms with a rigid
-  empty-joint hierarchy (shoulder→elbow→wrist), parents the existing body-part meshes to it
-  (no weight painting), solves the arm poses with an **analytical 2-bone IK solver**
-  (Law of Cosines + pole vector, per the paper's Phase 4), keyframes the HELP motion, decimates
-  for the web, and exports `robot_help.glb`.
-- `robot_help.glb` — generated output (~7.5 MB). Don't edit by hand; regenerate.
-- `help.html` — Three.js viewer. Loads the GLB, plays the clip with `AnimationMixer`, shows the
-  HELP schema, and has speed / loop / camera controls.
-- `emergency.html` — earlier primitive-hand experiment (no avatar). Kept for reference only.
+Because the VRM has real finger bones, the fist is a genuine finger curl (probed flexion axis =
+local **Z**), so there is **no clipping** — unlike a rigid mesh. The arm pose is FK on the
+VRM humanoid normalized bones; finger curl + the belly→chest lift are keyframed in JS.
 
-## Rebuild the animation
+### Run it
+GLTF/VRM must be served over http (not `file://`):
 ```
-"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python build_help_glb.py
+cd D:\ASL_Game\avatar_preview
+python -m http.server 8778
 ```
-Tune the sign by editing the wrist targets at the top of `build_help_glb.py`
-(`TARGETS_TOGETHER`, `TARGETS_LIFTED`, `POLE`) — these are in Blender world space
-(+X right, −Y front, +Z up). The IK solves the joint rotations for you.
+Open http://127.0.0.1:8778/help.html
 
-## Run the viewer
-GLTF must be served over http (not `file://`):
-```
-python -m http.server 8778 --directory .
-```
-then open http://127.0.0.1:8778/help.html
+### Tune the sign
+All in `help.html`:
+- `POSE_REST` / `POSE_TOGETHER` / `POSE_LIFT` — arm euler angles (VRM normalized bones).
+- `setFist()` — finger curl angles (per joint).
+- `T = {...}` — animation timeline (reach / lift / hold seconds).
 
-## Handshape note
-The robot has no finger bones. The dominant **fist** is produced by baking a curl into the
-sub-knuckle finger geometry of the right hand (`make_fist()` in `build_help_glb.py`,
-controlled by `FIST_KNUCKLE_Z` / `FIST_PIVOT` / `FIST_ANGLE`). The non-dominant hand stays
-open as the platform. So all four HELP parameters read correctly now: closed fist resting on
-open palm, at center, lifting up.
+## Deprecated — robot.blend approach
+`build_help_glb.py` + `robot_help.glb` rigged the unrigged `D:\robot.blend` mech (rigid
+bone-per-part + a baked finger-curl). Superseded because the robot has no finger bones, so a
+clean fist wasn't possible. Kept for reference only.
 
 ## Honest caveats
-- The fist is a baked geometry curl, not articulated finger joints — it's a good silhouette
-  approximation, not anatomically exact.
-- This pose is **uncalibrated**. Per the paper's Phase 6, a fluent/Deaf signer should review and
-  adjust the schema targets before this is used as a real teaching reference.
-- For a *single* sign, a recorded human clip is still the most accurate option. This pipeline
-  earns its keep only when synthesizing a large vocabulary — exactly what the paper's Phase 9
-  "sequencing reality check" recommends deferring until the core loop is proven.
+- This pose is **uncalibrated**. Per the paper's Phase 6, a fluent/Deaf signer should review the
+  pose targets before it's used as a real teaching reference.
+- For a single sign, a recorded human clip is still the most accurate option; this pipeline
+  earns its keep when synthesizing a large vocabulary (paper Phase 9).

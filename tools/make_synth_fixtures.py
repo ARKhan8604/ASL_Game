@@ -263,7 +263,7 @@ def hospital_clip(mode: str) -> list[Frame]:
     out = []
     for i, t in enumerate(_ts()):
         fr = _progress(i, mode)
-        dom = np.array([LS[0], 110.0 + 50.0 * fr])   # H hand draws a short down-stroke near a shoulder
+        dom = np.array([LS[0], 105.0 + 72.0 * fr])   # H hand draws a clear down-stroke near a shoulder
         nd = ndom.copy()
         if mode == "idle":
             dom, nd = dom + _jit(), nd + _jit()

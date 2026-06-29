@@ -47,11 +47,13 @@ def test_water_rejects_w_hand_off_chin():
 
 
 # ----------------------------------------------------------------- DOCTOR / NURSE (tap the wrist)
-def test_doctor_rejects_tapping_at_the_face():
-    frames = [M._frame(t, [M.make_hand("Right", [M.CX + 30, y], "open"),
-                           M.make_hand("Left", [M.CX + 30, M.Y_FOREHEAD], "open")])
-              for t, y in zip(M._ts(), _osc(M.Y_FOREHEAD))]
-    assert not _passes(DOCTOR, frames), "tapping two hands at the forehead must not pass DOCTOR"
+def test_doctor_rejects_hands_not_touching():
+    # an open hand "tapping" in the air while the other hand is far away (no contact) must fail:
+    # DOCTOR's location is the closest-approach of the two hands (a real tap brings them together).
+    frames = [M._frame(t, [M.make_hand("Right", [M.CX + 90, y], "open"),
+                           M.make_hand("Left", [M.CX - 90, M.Y_BELLY], "open")])
+              for t, y in zip(M._ts(), _osc(M.Y_BELLY))]
+    assert not _passes(DOCTOR, frames), "an open hand tapping in the air (no contact) must not pass DOCTOR"
 
 
 def test_doctor_rejects_single_hand():

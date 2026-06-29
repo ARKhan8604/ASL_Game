@@ -98,7 +98,7 @@ document.getElementById('schemaPre').innerHTML = JSON.stringify(HELP, null, 1)
   .replace(/: (true|false|null|-?[0-9.]+)/g, ': <span class="v">$1</span>');
 
 const app = document.getElementById('app');
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -145,14 +145,14 @@ const POSE_REST = {
 };
 // Hands meet front-center at belly (dominant=RIGHT fist resting on LEFT open palm)
 const POSE_TOGETHER = {
-  leftUpperArm:  [0, D(-28), D(70)], leftLowerArm:  [0, D(-80), 0],
-  rightUpperArm: [0, D(28), -D(70)], rightLowerArm: [0, D(80),  0],
+  leftUpperArm:  [0, D(-46), D(78)], leftLowerArm:  [0, D(-98), 0],   // lower (platform)
+  rightUpperArm: [0, D(46), -D(68)], rightLowerArm: [0, D(98),  0],   // higher (fist on top)
   leftHand: [0,0,0], rightHand: [0,0,0],
 };
 // Both lift up to chest (the HELP "lifting up")
 const POSE_LIFT = {
-  leftUpperArm:  [0, D(-28), D(48)], leftLowerArm:  [0, D(-80), 0],
-  rightUpperArm: [0, D(28), -D(48)], rightLowerArm: [0, D(80),  0],
+  leftUpperArm:  [0, D(-46), D(58)], leftLowerArm:  [0, D(-98), 0],
+  rightUpperArm: [0, D(46), -D(48)], rightLowerArm: [0, D(98),  0],
   leftHand: [0,0,0], rightHand: [0,0,0],
 };
 
@@ -172,16 +172,18 @@ function lerpPose(a, b, t) {
 }
 // Curl the dominant (right) hand into a fist. amount 0..1. Fingers curl about Z,
 // thumb folds across. Signs tuned by probing.
+// Finger flexion (probed): rotate about local Z; +Z curls the RIGHT hand into the palm.
 function setFist(side, amount) {
   const s = side === 'right' ? 1 : -1;
   for (const f of FINGERS) {
-    setBone(`${side}${f}Proximal`,     [0, 0, s * amount * D(90)]);
-    setBone(`${side}${f}Intermediate`, [0, 0, s * amount * D(100)]);
-    setBone(`${side}${f}Distal`,       [0, 0, s * amount * D(70)]);
+    setBone(`${side}${f}Proximal`,     [0, 0, s * amount * D(88)]);
+    setBone(`${side}${f}Intermediate`, [0, 0, s * amount * D(98)]);
+    setBone(`${side}${f}Distal`,       [0, 0, s * amount * D(55)]);
   }
-  setBone(`${side}ThumbProximal`,     [0, s * amount * D(40), 0]);
-  setBone(`${side}ThumbIntermediate`, [0, s * amount * D(40), 0]);
-  setBone(`${side}ThumbDistal`,       [0, s * amount * D(30), 0]);
+  // thumb folds across the curled fingers
+  setBone(`${side}ThumbProximal`,     [0, 0, s * amount * D(45)]);
+  setBone(`${side}ThumbIntermediate`, [0, 0, s * amount * D(45)]);
+  setBone(`${side}ThumbDistal`,       [0, 0, s * amount * D(30)]);
 }
 function openHand(side) {
   for (const f of FINGERS) for (const sg of SEGS) setBone(`${side}${f}${sg}`, [0,0,0]);
@@ -255,10 +257,9 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   if (vrm) {
-    const seeking = (window.__seekTime !== undefined && window.__seekTime !== null);
-    const time = seeking ? window.__seekTime : (clock.getElapsedTime() - t0) * speed;
+    const time = (clock.getElapsedTime() - t0) * speed;
     const done = applyAnim(time);
-    if (done && loop && !seeking) t0 = clock.getElapsedTime();
+    if (done && loop) t0 = clock.getElapsedTime();
     vrm.humanoid.update();
     vrm.update(dt);
   }
@@ -266,11 +267,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
-
-/* probe hooks (used during tuning) */
-window.__r = { renderer, scene, camera, controls, get vrm(){return vrm;}, get center(){return modelCenter;}, get radius(){return modelRadius;} };
-window.__cap = () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/jpeg', 0.7); };
-window.__pause = false;
 
 /* UI */
 const sp = document.getElementById('speed'), spV = document.getElementById('speedV');

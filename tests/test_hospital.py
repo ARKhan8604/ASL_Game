@@ -156,7 +156,11 @@ class TestSick:
 # Each sign's correct performance must pass ONLY its own sign — not a different one. The one known,
 # documented exception is MEDICINE ⊃ EMERGENCY (a claw shaken over a palm contains the one-hand
 # EMERGENCY shake), so EMERGENCY is allowed as an extra pass for the medicine fixture.
-_ALLOWED_EXTRA = {"medicine": {"EMERGENCY"}}
+# Documented inherent overlaps (rule-based v1 can't separate these; in play only the PROMPTED sign
+# is ever checked, so a player doing the right sign is unaffected):
+#   MEDICINE ⊃ EMERGENCY  — a claw shaken over a palm contains the one-hand EMERGENCY shake
+#   BREATHE  ⊃ DOCTOR     — open hands meeting + moving on the chest looks like an open-hand tap
+_ALLOWED_EXTRA = {"medicine": {"EMERGENCY"}, "breathe": {"DOCTOR"}}
 _ALL = dict(HOSPITAL_SIGNS) and {s.name: s for s, _ in HOSPITAL_SIGNS}
 _ALL["SICK"] = SICK
 

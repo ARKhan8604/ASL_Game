@@ -210,7 +210,14 @@ def _score_location(buffer, sign: Sign, roles, shoulder_width) -> float:
             other = f.hand(other_label) if other_label else None
             if other is None:
                 continue
-            d = normalized_distance(acting.center, other.center, shoulder_width)
+            if loc.use_closest_approach:
+                # closest points of the two hands — a tap/touch brings a fingertip up to the other
+                # hand even though the palm CENTRES stay far apart (a wrist-tap is ~1 shoulder-width
+                # centre-to-centre but near-zero at the contact point).
+                ap, op = acting.points[:, :2], other.points[:, :2]
+                d = float(np.min(np.linalg.norm(ap[:, None, :] - op[None, :, :], axis=2))) / shoulder_width
+            else:
+                d = normalized_distance(acting.center, other.center, shoulder_width)
             dist_score = _band_score(d, loc.min_dist_ratio, loc.max_dist_ratio)
             vert_score = _vertical_score(loc.vertical, acting.center, other.center, shoulder_width)
             score = min(dist_score, vert_score)

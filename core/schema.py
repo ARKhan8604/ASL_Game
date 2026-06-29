@@ -56,6 +56,8 @@ class LocationReq:
     min_dist_ratio: float = 0.0
     vertical: Optional[str] = None           # "above" | "below" (acting vs anchor hand) | None
     below: Optional[str] = None              # acting hand must be BELOW this body landmark: "mouth"
+    use_closest_approach: bool = False       # OTHER_HAND: measure the closest POINTS of the two
+                                             # hands (a tap/touch), not their palm centers
     required: bool = True
     min_confidence: float = 0.6
 

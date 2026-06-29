@@ -34,16 +34,19 @@ HOSPITAL = Sign(
     location=LocationReq(
         anchor=Anchor.SHOULDER,
         acting_hand=DOMINANT,
-        max_dist_ratio=0.5,          # within ~0.5 shoulder-widths of a shoulder
+        max_dist_ratio=0.4,          # within ~0.4 shoulder-widths of a shoulder
+        below="mouth",               # on the upper arm, not up at the face
         required=True,
     ),
     movement=MovementReq(
         kind=MovementKind.LINEAR,
         actor=DOMINANT,
         direction=None,              # the cross is two short strokes; any drawn travel counts
-        min_displacement_ratio=0.12,
-        min_duration_s=0.4,
-        min_confidence=0.5,
+        # A real DRAWN cross, not just bringing the hand to the shoulder: demand a clear stroke so
+        # "show 2 fingers near the shoulder" alone can't pass.
+        min_displacement_ratio=0.25,
+        min_duration_s=0.5,
+        min_confidence=0.6,
         required=True,
     ),
 )

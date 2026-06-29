@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  /* Zippy's palette — midnight purple core */
+  --color-z-purple: #7B2FBE;
+  --color-z-purple-dark: #5A1F8E;
+  --color-z-purple-deep: #2D1150;
+  --color-z-purple-light: #A855F7;
+  --color-z-purple-glow: #C084FC;
+  --color-z-orange: #F59E0B;
+  --color-z-orange-bright: #FBBF24;
+  --color-z-cream: #FFF8E7;
+  --color-z-yellow: #FCD34D;
+  --color-z-green: #34D399;
+  --color-z-green-dark: #059669;
+  --color-z-red: #EF4444;
+  --color-z-blue: #60A5FA;
+
+  /* Neutrals */
+  --color-z-gray-50: #FAF5FF;
+  --color-z-gray-100: #F3E8FF;
+  --color-z-gray-200: #DDD6E1;
+  --color-z-gray-300: #A89BB5;
+  --color-z-gray-400: #7C6F8A;
+  --color-z-gray-500: #4A3D57;
+
+  /* Surfaces */
+  --color-z-bg: #120B1E;
+  --color-z-card: #1E1230;
+  --color-z-surface: #2A1B40;
+  --color-z-surface-hover: #362450;
+
+  --font-sans: 'Quicksand', sans-serif;
+}
+
+@font-face {
+  font-family: 'Quicksand';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/quicksand/v31/6xK-dSZaM9iE8KbpRA_LJ3z8mH9BOJvgkP8o58a-xI.woff2') format('woff2');
+}
+
+body {
+  margin: 0;
+  background-color: #120B1E;
+  color: #FAF5FF;
+  font-family: 'Quicksand', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A1B40;
+  border-radius: 3px;
+}

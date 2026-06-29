@@ -53,30 +53,67 @@ _THUMB_TIP_TUCKED = np.array([0.00, -0.62])
 
 # (index, middle, ring, pinky) extension, thumb_extended. Aliases share one spec so a sign asking for
 # "s" and one asking for "fist" animate identically — the same reuse the recognition dispatch relies on.
-SHAPE_SPECS: dict[str, tuple[tuple[float, float, float, float], float]] = {
-    "fist":   ((0.0, 0.0, 0.0, 0.0), 0.0),    # fully folded thumb
-    "s":      ((0.0, 0.0, 0.0, 0.0), 0.0),    # fully folded thumb
-    "a":      ((0.0, 0.0, 0.0, 0.0), 0.5),    # thumb alongside index, not fully folded
-    "open":   ((1.0, 1.0, 1.0, 1.0), 1.0),
-    "b":      ((1.0, 1.0, 1.0, 1.0), 0.3),    # thumb tucked across palm
-    "5":      ((1.0, 1.0, 1.0, 1.0), 1.0),
-    "claw":   ((0.40, 0.40, 0.40, 0.40), 1.0),
-    "index":  ((1.0, 0.0, 0.0, 0.0), 0.0),
-    "point":  ((1.0, 0.0, 0.0, 0.0), 0.0),
-    "1":      ((1.0, 0.0, 0.0, 0.0), 0.0),
-    "v":      ((1.0, 1.0, 0.0, 0.0), 0.0),
-    "l":      ((1.0, 0.0, 0.0, 0.0), 1.0),    # index + thumb extended
-    "y":      ((0.0, 0.0, 0.0, 1.0), 1.0),    # pinky + thumb extended
-    "n":      ((1.0, 1.0, 0.0, 0.0), 0.0),
-    "h":      ((1.0, 1.0, 0.0, 0.0), 0.0),
-    "u":      ((1.0, 1.0, 0.0, 0.0), 0.0),
-    "w":      ((1.0, 1.0, 1.0, 0.0), 0.0),
-    "middle": ((0.0, 1.0, 0.0, 0.0), 0.0),
+SHAPE_SPECS: dict[str, tuple[tuple[float, float, float, float], bool]] = {
+    "fist":   ((0.0, 0.0, 0.0, 0.0), False),
+    "s":      ((0.0, 0.0, 0.0, 0.0), False),
+    "a":      ((0.0, 0.0, 0.0, 0.0), True),   # fist + thumb alongside
+    "open":   ((1.0, 1.0, 1.0, 1.0), True),
+    "b":      ((1.0, 1.0, 1.0, 1.0), True),
+    "5":      ((1.0, 1.0, 1.0, 1.0), True),
+    "claw":   ((0.40, 0.40, 0.40, 0.40), True),
+    "index":  ((1.0, 0.0, 0.0, 0.0), False),
+    "point":  ((1.0, 0.0, 0.0, 0.0), False),
+    "1":      ((1.0, 0.0, 0.0, 0.0), False),
+    "v":      ((1.0, 1.0, 0.0, 0.0), False),
+    "l":      ((1.0, 0.0, 0.0, 0.0), True),   # index + thumb
+    "y":      ((0.0, 0.0, 0.0, 1.0), True),   # pinky + thumb
+    "n":      ((1.0, 1.0, 0.0, 0.0), False),
+    "h":      ((1.0, 1.0, 0.0, 0.0), False),
+    "u":      ((1.0, 1.0, 0.0, 0.0), False),
+    "w":      ((1.0, 1.0, 1.0, 0.0), False),
+    "middle": ((0.0, 1.0, 0.0, 0.0), False),
 }
 
 
 def supported_shapes() -> list[str]:
     return sorted(SHAPE_SPECS.keys())
+
+
+# --- MEASURED handshape (inverse of presets): read real per-finger curl from a captured pose -------
+# MediaPipe hand topology: wrist=0, then thumb(1-4) and index/middle/ring/pinky each (mcp,pip,dip,tip).
+_MP_FINGERS = {"index": (5, 6, 7, 8), "middle": (9, 10, 11, 12),
+               "ring": (13, 14, 15, 16), "pinky": (17, 18, 19, 20)}
+_MP_THUMB = (1, 2, 3, 4)
+_FLEX_STRAIGHT_DEG = 15.0    # a finger this straight reads as fully extended (frac 0)
+_FLEX_CURLED_DEG = 150.0     # this bent reads as fully curled (frac 1)
+
+
+def _angle(a: np.ndarray, b: np.ndarray) -> float:
+    a = a / (np.linalg.norm(a) or 1.0)
+    b = b / (np.linalg.norm(b) or 1.0)
+    return float(np.degrees(np.arccos(np.clip(a.dot(b), -1.0, 1.0))))
+
+
+def measure_pose(pose) -> dict:
+    """A captured 21x3 hand pose -> measured per-finger curl fraction [0,1] and thumb extension.
+
+    Curl is the angle between each finger's proximal phalanx (mcp->pip) and its distal segment
+    (dip->tip): ~0deg straight, ~180deg fully folded. Rotation/translation invariant, so it is
+    independent of where the arm carries the hand. The four-finger order is index, middle, ring,
+    pinky (matching SHAPE_SPECS ext order).
+    """
+    p = np.asarray(pose, dtype=float)
+    flex = []
+    for name in ("index", "middle", "ring", "pinky"):
+        mcp, pip, dip, tip = _MP_FINGERS[name]
+        deg = _angle(p[pip] - p[mcp], p[tip] - p[dip])
+        frac = (deg - _FLEX_STRAIGHT_DEG) / (_FLEX_CURLED_DEG - _FLEX_STRAIGHT_DEG)
+        flex.append(round(float(np.clip(frac, 0.0, 1.0)), 3))
+    # thumb extension: straight thumb (small bend at IP) + tip far from index mcp reads as extended
+    tcmc, tmcp, tip_, ttip = _MP_THUMB
+    tbend = _angle(p[tmcp] - p[tcmc], p[ttip] - p[tip_])
+    thumb_ext = float(np.clip(1.0 - (tbend - _FLEX_STRAIGHT_DEG) / 90.0, 0.0, 1.0))
+    return {"flex": flex, "thumb": round(thumb_ext, 3)}
 
 
 def _finger_chain(name: str, extension: float) -> np.ndarray:
@@ -88,10 +125,9 @@ def _finger_chain(name: str, extension: float) -> np.ndarray:
     return np.array([unit * (m * reach) for m in mults])
 
 
-def _thumb_chain(extension: float) -> np.ndarray:
-    """thumb mcp, ip, tip (3 points, 2D). cmc is fixed; the rest lerp between tucked and out."""
-    ext = float(extension) if not isinstance(extension, bool) else (1.0 if extension else 0.0)
-    tip = _THUMB_TIP_TUCKED + (_THUMB_TIP_OUT - _THUMB_TIP_TUCKED) * ext
+def _thumb_chain(extended: bool) -> np.ndarray:
+    """thumb mcp, ip, tip (3 points, 2D). cmc is fixed; the rest interpolate cmc->tip."""
+    tip = _THUMB_TIP_OUT if extended else _THUMB_TIP_TUCKED
     return np.array([_THUMB_CMC + (tip - _THUMB_CMC) * f for f in (0.40, 0.72, 1.0)])
 
 

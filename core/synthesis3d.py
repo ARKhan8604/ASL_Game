@@ -84,10 +84,17 @@ _SPREAD = {
 }
 
 
+# Graduated thumb for the AVATAR only (0=folded, 0.5=alongside, 1=extended). SHAPE_SPECS keeps a
+# boolean thumb for the recognition round-trip; this table refines it for rendering where a partial
+# thumb reads better (A rests alongside the fist; B tucks across the palm).
+_AVATAR_THUMB = {"a": 0.5, "b": 0.3}
+
+
 def _shape(req) -> dict:
     kind = req.kind.lower()
     ext, thumb = SHAPE_SPECS[kind]
-    out = {"kind": req.kind, "ext": list(ext), "thumb": float(thumb)}
+    thumb_val = _AVATAR_THUMB.get(kind, 1.0 if thumb else 0.0)
+    out = {"kind": req.kind, "ext": list(ext), "thumb": float(thumb_val)}
     if kind in _SPREAD:
         out["spread"] = _SPREAD[kind]
     return out

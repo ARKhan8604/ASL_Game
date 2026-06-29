@@ -24,7 +24,9 @@ import argparse
 import json
 from pathlib import Path
 
-from core.handshape_presets import SHAPE_SPECS
+import numpy as np
+
+from core.handshape_presets import SHAPE_SPECS, measure_pose
 from core.synthesis3d import build_animation
 from signs import COFFEE_SIGNS
 
@@ -86,10 +88,28 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     anim = build_animation(sign, fps=args.fps)
+
+    # Drive the DOMINANT hand's per-finger curl from the REAL measured footage (averaged over the
+    # clean keyframes), so each finger curls exactly as much as it did in the recording instead of a
+    # coarse 0/1 preset. The handshape KIND/thumb/spread stay authored; only the curl magnitudes come
+    # from MediaPipe. (Monocular capture only tracks the dominant hand, so ndom keeps its preset.)
+    poses = schema.get("calibration_poses", {})
+    flagged = set(schema.get("occlusion_flags", []))
+    kf_frames = {k["pose"]: k["frame"] for k in schema.get("keyframes", [])}
+    clean = [pose for label, pose in poses.items() if kf_frames.get(label) not in flagged]
+    if clean:
+        flexes = np.array([measure_pose(p)["flex"] for p in clean]).mean(axis=0)
+        # Contrast curve: a casually-recorded non-signing finger only half-curls (~0.5); crisp ASL
+        # tucks it fully. Push mid curls toward 1 while keeping near-straight fingers straight.
+        crisp = np.clip((flexes - 0.12) * 1.7, 0.0, 1.0)
+        anim["dom"]["measured"] = {"flex": [round(float(v), 3) for v in crisp]}
+
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{name}.json").write_text(json.dumps(anim), encoding="utf-8")
     print(f"rendered {name} -> {out / (name + '.json')}  (open viewer.html?sign={name})")
+    if "measured" in anim["dom"]:
+        print(f"  measured finger curl (i,m,r,p): {anim['dom']['measured']['flex']}")
 
     div = _report(schema, sign)
     print("calibration report (footage vs authored):")

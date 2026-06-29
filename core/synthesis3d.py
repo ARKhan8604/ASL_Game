@@ -26,15 +26,15 @@ from core.schema import Anchor, MovementKind, Sign
 # anchor -> (reference bone, base offset [x,y,z] in shoulder-widths, hands in FRONT of the body).
 # y is up, z is forward; references are torso/head bones so heights read anatomically.
 _ANCHOR_BASE = {
-    Anchor.CHEST:         ("Spine1", np.array([0.00, 0.05, 0.80])),
-    Anchor.BELLY:         ("Spine",  np.array([0.00, -0.10, 0.72])),
-    Anchor.FOREHEAD:      ("Head",   np.array([0.00, 0.16, 0.55])),
-    Anchor.CHIN:          ("Head",   np.array([0.00, -0.45, 0.55])),
-    Anchor.NEUTRAL_SPACE: ("Spine2", np.array([0.20, 0.10, 0.82])),
-    Anchor.SHOULDER:      ("Spine2", np.array([-0.40, 0.05, 0.55])),
+    Anchor.CHEST:         ("Spine1", np.array([0.00, 0.05, 0.45])),    # on the chest, not floating
+    Anchor.BELLY:         ("Spine",  np.array([0.00, -0.10, 0.50])),
+    Anchor.FOREHEAD:      ("Head",   np.array([0.00, 0.16, 0.40])),
+    Anchor.CHIN:          ("Head",   np.array([0.00, -0.35, 0.35])),   # closer to face
+    Anchor.NEUTRAL_SPACE: ("Spine2", np.array([0.20, 0.10, 0.65])),    # in front but not far
+    Anchor.SHOULDER:      ("Spine2", np.array([-0.40, 0.05, 0.45])),
 }
 # OTHER_HAND: non-dominant 'anvil' base, and the dominant hand's offset from it.
-_NDOM_BASE = ("Spine1", np.array([0.0, 0.02, 0.80]))   # lower fist at lower-chest, not the belly
+_NDOM_BASE = ("Spine1", np.array([0.0, 0.02, 0.45]))   # lower fist at the chest surface
 _FOREARM_FWD = 0.0
 
 # default 3D linear stroke direction per anchor (body frame), kept near the anchor band
@@ -78,7 +78,10 @@ _PALM_DEFAULT = [0.0, 0.0, 1.0]      # most signs: palm out toward the viewer (f
 
 # Extra per-finger splay (radians) on top of the default fingers-together adduction. The V handshape
 # spreads index and middle apart; everything else stays together.
-_SPREAD = {"v": [0.30, -0.12, 0.0, 0.0]}
+_SPREAD = {
+    "v": [0.45, -0.20, 0.0, 0.0],      # wider V spread so index + middle don't overlap
+    "y": [0.0, 0.0, 0.0, -0.40],        # splay pinky outward away from ring
+}
 
 
 def _shape(req) -> dict:
@@ -96,12 +99,28 @@ def _frame_count(sign: Sign, fps: float) -> tuple[int, float]:
     return max(int(round(fps * duration)) + 1, 12), duration
 
 
+# Per-sign position overrides (dom_base, ndom_base, anchor_joint).
+# These take priority over the generic anchor lookup when the sign needs a specific arm geometry.
+_SIGN_POS = {
+    "WANT": {
+        "anchor": "Spine1",
+        "dom":  np.array([0.30, -0.20, 0.55]),    # belly height, elbows bent ~90deg, palms up
+        "ndom": np.array([-0.30, -0.20, 0.55]),
+    },
+}
+
+
 def _plan(sign: Sign, n: int):
     """Per-frame (dom_off[n,3], ndom_off[n,3] | None) body-frame target offsets."""
     mv = sign.movement
     other = sign.location.anchor == Anchor.OTHER_HAND
 
-    if other:
+    # Sign-specific position override
+    if sign.name in _SIGN_POS:
+        sp = _SIGN_POS[sign.name]
+        dom_base = sp["dom"].astype(float)
+        ndom_base = sp["ndom"].astype(float) if "ndom" in sp else None
+    elif other:
         _, base = _NDOM_BASE
         ndom_base = base.astype(float)
         dom_base = ndom_base + _dom_offset(sign)
@@ -164,7 +183,9 @@ def build_animation(sign: Sign, fps: float = 30.0) -> dict:
     n, duration = _frame_count(sign, fps)
     dom_off, ndom_off = _plan(sign, n)
 
-    if sign.location.anchor == Anchor.OTHER_HAND:
+    if sign.name in _SIGN_POS:
+        anchor_joint = _SIGN_POS[sign.name].get("anchor", "Spine2")
+    elif sign.location.anchor == Anchor.OTHER_HAND:
         anchor_joint = _NDOM_BASE[0]
     else:
         anchor_joint = _ANCHOR_BASE.get(sign.location.anchor, _ANCHOR_BASE[Anchor.NEUTRAL_SPACE])[0]

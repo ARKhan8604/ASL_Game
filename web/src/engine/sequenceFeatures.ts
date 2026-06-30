@@ -110,10 +110,21 @@ function resampleTime(feats: number[][], seqLen: number): number[][] {
   return out;
 }
 
-/** Frame sequence -> (SEQ_LEN, FEAT_DIM) features, or null if empty / no hands. */
+/**
+ * Frame sequence -> (SEQ_LEN, FEAT_DIM) features, or null if empty / no hands.
+ *
+ * Trims leading/trailing no-hand frames first (must match ml/dataset.py) so the fixed-length
+ * window concentrates on the actual sign, not rest-pose frames at the edges.
+ */
 export function clipToSequence(frames: Frame[], seqLen: number = SEQ_LEN): number[][] | null {
-  if (!frames.length || !frames.some((f) => f.hands.length)) return null;
-  const { mid, scale } = clipNorm(frames);
-  const feats = frames.map((f) => frameFeatures(f, mid, scale));
+  if (!frames.length) return null;
+  let i0 = 0;
+  let i1 = frames.length - 1;
+  while (i0 <= i1 && frames[i0].hands.length === 0) i0++;
+  while (i1 >= i0 && frames[i1].hands.length === 0) i1--;
+  if (i0 > i1) return null;
+  const active = frames.slice(i0, i1 + 1);
+  const { mid, scale } = clipNorm(active);
+  const feats = active.map((f) => frameFeatures(f, mid, scale));
   return resampleTime(feats, seqLen);
 }

@@ -86,10 +86,19 @@ def _frame_features(fr: dict, mid: np.ndarray, scale: float) -> np.ndarray:
 
 
 def clip_to_sequence(payload: dict, seq_len: int = SEQ_LEN) -> Optional[np.ndarray]:
-    """Frame-JSON payload -> (seq_len, FEAT_DIM) array, or None if empty/no hands."""
+    """Frame-JSON payload -> (seq_len, FEAT_DIM) array, or None if empty/no hands.
+
+    Trims leading/trailing no-hand frames first, so the fixed-length window concentrates on
+    the actual sign rather than the rest pose at a dictionary clip's edges (interior dropouts
+    are kept — presence flags handle them).
+    """
     frames = payload.get("frames", [])
-    if not frames or not any(fr["hands"] for fr in frames):
+    if not frames:
         return None
+    hand_idx = [i for i, fr in enumerate(frames) if fr["hands"]]
+    if not hand_idx:
+        return None
+    frames = frames[hand_idx[0]: hand_idx[-1] + 1]
     mid, scale = _clip_norm(frames)
     feats = np.stack([_frame_features(fr, mid, scale) for fr in frames])  # (N, F)
     return _resample_time(feats, seq_len)

@@ -128,23 +128,32 @@ def _read_manifest(path: Path) -> dict[str, str]:
     return splits
 
 
-def build(landmarks_dir: str, manifest: str, out: str, seq_len: int = SEQ_LEN) -> None:
-    root = Path(landmarks_dir)
-    split_map = _read_manifest(Path(manifest))
+def build(landmarks_dir, manifest, out: str, seq_len: int = SEQ_LEN) -> None:
+    """Build a cache from one OR MORE landmark roots (merged). `landmarks_dir` and
+    `manifest` may each be a single path or a list of paths — pass parallel lists to merge
+    several datasets (e.g. ASL Citizen + WLASL) into one signer-disjoint cache."""
+    roots = [Path(p) for p in ([landmarks_dir] if isinstance(landmarks_dir, str) else landmarks_dir)]
+    man_paths = [manifest] if isinstance(manifest, str) else list(manifest)
+
+    # Merge all manifests into one clip_id -> split map (later manifests win on collision).
+    split_map: dict[str, str] = {}
+    for mp in man_paths:
+        split_map.update(_read_manifest(Path(mp)))
 
     X, y, splits, raw_labels = [], [], [], []
     skipped = 0
-    for jp in sorted(root.rglob("*.json")):
-        payload = json.loads(jp.read_text(encoding="utf-8"))
-        seq = clip_to_sequence(payload, seq_len)
-        if seq is None:
-            skipped += 1
-            continue
-        sign = payload["sign_name"]
-        clip_id = f"{jp.parent.name}/{jp.stem}"
-        X.append(seq)
-        raw_labels.append(sign)
-        splits.append(split_map.get(clip_id, "train"))
+    for root in roots:
+        for jp in sorted(root.rglob("*.json")):
+            payload = json.loads(jp.read_text(encoding="utf-8"))
+            seq = clip_to_sequence(payload, seq_len)
+            if seq is None:
+                skipped += 1
+                continue
+            sign = payload["sign_name"]
+            clip_id = f"{jp.parent.name}/{jp.stem}"
+            X.append(seq)
+            raw_labels.append(sign)
+            splits.append(split_map.get(clip_id, "train"))
 
     if not X:
         print("no usable clips found — nothing to cache")
@@ -168,8 +177,10 @@ def build(landmarks_dir: str, manifest: str, out: str, seq_len: int = SEQ_LEN) -
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Build training cache from Frame JSON landmarks.")
-    p.add_argument("--landmarks", default="data/landmarks")
-    p.add_argument("--manifest", default="data/manifest.csv")
+    p.add_argument("--landmarks", nargs="+", default=["data/landmarks"],
+                   help="one or more landmark roots (merged)")
+    p.add_argument("--manifest", nargs="+", default=["data/manifest.csv"],
+                   help="one or more manifests (merged; parallel to --landmarks)")
     p.add_argument("--out", default="data/cache.npz")
     p.add_argument("--seq-len", type=int, default=SEQ_LEN)
     args = p.parse_args()

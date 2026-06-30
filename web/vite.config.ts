@@ -10,4 +10,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // tfjs is only reached via a lazy dynamic import in engine/classifier.ts, which Vite's dep
+  // scanner doesn't always pre-bundle — list it so the dev server can serve the optimized dep
+  // on demand (prod build already code-splits it correctly).
+  optimizeDeps: {
+    include: ['@tensorflow/tfjs'],
+  },
 })

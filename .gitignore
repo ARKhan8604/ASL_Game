@@ -27,7 +27,12 @@ recordings/
 data/
 ml/runs/
 ml/inspect_out/
+ml/inspect_merged/
+ml/inspect_*/
 calibration_log.json
+
+# --- Landmark dataset deliverable for the teammate (regenerable; send directly, not via git) ---
+asl_landmarks_for_friend.zip
 
 # --- OS / editor ---
 .DS_Store

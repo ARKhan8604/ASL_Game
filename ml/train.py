@@ -112,13 +112,18 @@ def build_model(seq_len, feat_dim, n_classes):
     # recurrent + input dropout inside the GRUs, weight decay on the dense head, and a
     # smaller second recurrent layer.
     l2 = regularizers.l2(1e-4)
+    # reset_after=False is REQUIRED for TF.js: its LayersModel GRUCell rejects reset_after=True
+    # (the Keras/cuDNN default), so a model trained with the default fails to load in-browser
+    # with "GRUCell does not support reset_after parameter set to true". We don't use cuDNN here
+    # (CPU training), so there's no speed cost, and accuracy is equivalent.
     return models.Sequential([
         layers.Input(shape=(seq_len, feat_dim)),
         layers.Bidirectional(layers.GRU(
             64, return_sequences=True, dropout=0.25, recurrent_dropout=0.25,
-            kernel_regularizer=l2)),
+            kernel_regularizer=l2, reset_after=False)),
         layers.Bidirectional(layers.GRU(
-            40, dropout=0.25, recurrent_dropout=0.25, kernel_regularizer=l2)),
+            40, dropout=0.25, recurrent_dropout=0.25, kernel_regularizer=l2,
+            reset_after=False)),
         layers.Dropout(0.45),
         layers.Dense(64, activation="relu", kernel_regularizer=l2),
         layers.Dropout(0.45),

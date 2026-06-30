@@ -46,11 +46,12 @@ const DISABLED: SignClassifier = {
 export async function loadClassifier(modelUrl: string, classes: string[]): Promise<SignClassifier> {
   let tf: TfLike;
   try {
-    // Indirection dodges Vite static resolution so the build doesn't require tfjs.
-    const pkg = '@tensorflow/' + 'tfjs';
-    tf = (await import(/* @vite-ignore */ pkg)) as unknown as TfLike;
+    // Real dynamic import: Vite code-splits tfjs into its own async chunk that loads on
+    // demand (kept out of the main bundle), and the browser can actually resolve it. The
+    // try/catch still degrades gracefully if the chunk fails to fetch at runtime.
+    tf = (await import('@tensorflow/tfjs')) as unknown as TfLike;
   } catch {
-    console.warn('[classifier] @tensorflow/tfjs not installed — disambiguation disabled.');
+    console.warn('[classifier] @tensorflow/tfjs unavailable — disambiguation disabled.');
     return DISABLED;
   }
 

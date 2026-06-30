@@ -19,7 +19,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 try:
@@ -92,8 +91,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Download + extract WLASL game-vocab clips.")
     ap.add_argument("--meta", default="data/wlasl/WLASL_v0.3.json")
     ap.add_argument("--out", default="data/wlasl/landmarks")
+    # Scratch dir for the transient .mp4 downloads. Defaults to a folder on the OUTPUT drive
+    # (E:) rather than the OS temp dir (C:\...\AppData\Local\Temp) so we never fill up C:.
+    # Each clip is downloaded here, landmarks are extracted, then the .mp4 is deleted.
+    ap.add_argument("--tmp", default=None,
+                    help="scratch dir for transient downloads (default: <out>/../_dl_tmp)")
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
+
+    tmp_dir = Path(args.tmp) if args.tmp else (Path(args.out).parent / "_dl_tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
 
     data = json.load(open(args.meta, encoding="utf-8"))
     # Flatten to (sign, instance) for our vocab only.
@@ -123,7 +130,7 @@ def main() -> None:
                 skip += 1
                 continue
 
-            tmp = os.path.join(tempfile.gettempdir(), f"wlasl_{vid}.mp4")
+            tmp = str(tmp_dir / f"wlasl_{vid}.mp4")
             try:
                 if not download(inst["url"], tmp):
                     fail += 1

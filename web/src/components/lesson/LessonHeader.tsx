@@ -25,10 +25,10 @@ export function LessonHeader({ lessonTitle: _lessonTitle, current, total, onClos
         <div className="h-3 bg-z-surface rounded-full overflow-hidden">
           <motion.div
             className="h-full rounded-full"
-            style={{ background: 'linear-gradient(90deg, #7B2FBE, #A855F7)' }}
+            style={{ background: 'linear-gradient(90deg, #7C3AED, #A78BFA)' }}
             initial={{ width: 0 }}
             animate={{ width: `${progress * 100}%` }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
+            transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
           />
         </div>
       </div>

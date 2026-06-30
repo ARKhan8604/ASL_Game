@@ -30,52 +30,99 @@ export function PracticeTab({ onStartPractice, onStartStory }: Props) {
       </motion.div>
 
       {/* Quick session */}
-      <motion.button
-        onClick={onStartPractice}
-        className="w-full rounded-2xl p-5 mb-3 text-left border border-white/5 overflow-hidden relative"
-        style={{ background: 'linear-gradient(135deg, #5B21B6, #7C3AED)' }}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.98 }}
+      <motion.div
+        className="mb-3"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
       >
-        <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-        <div className="relative flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-white">Quick Session</h3>
-            <p className="text-purple-200 text-sm mt-1">
-              {dueForReview.length > 0
-                ? `${dueForReview.length} sign${dueForReview.length > 1 ? 's' : ''} to review`
-                : 'Warm up with your learned signs'}
-            </p>
+        <motion.button
+          onClick={onStartPractice}
+          className="w-full rounded-2xl p-5 text-left border border-white/5 overflow-hidden relative"
+          style={{ background: 'linear-gradient(135deg, #5B21B6, #7C3AED)' }}
+          initial="rest"
+          animate="rest"
+          whileHover="hover"
+          whileTap={{ scale: 0.97 }}
+          variants={{
+            rest:  { scale: 1, boxShadow: '0 0 0 rgba(0,0,0,0)' },
+            hover: { scale: 1.02, boxShadow: '0 14px 40px rgba(91, 33, 182, 0.55)', transition: { duration: 0.25, ease: 'easeOut' } },
+          }}
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-white">Quick Session</h3>
+              <p className="text-purple-200 text-sm mt-1">
+                {dueForReview.length > 0
+                  ? `${dueForReview.length} sign${dueForReview.length > 1 ? 's' : ''} to review`
+                  : 'Warm up with your learned signs'}
+              </p>
+            </div>
+            <motion.span
+              className="text-3xl inline-block"
+              style={{ transformOrigin: '75% 80%' }}
+              variants={{
+                rest:  { rotate: 0, transition: { duration: 0.3, ease: 'easeOut' } },
+                hover: { rotate: [0, -18, 14, -18, 14, 0], transition: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } },
+              }}
+            >🤟</motion.span>
           </div>
-          <span className="text-3xl">🤟</span>
-        </div>
-      </motion.button>
+        </motion.button>
+      </motion.div>
 
       {/* Story mode */}
-      <motion.button
-        onClick={onStartStory}
-        className="w-full rounded-2xl p-5 mb-3 text-left border border-white/5 overflow-hidden relative"
-        style={{ background: 'linear-gradient(135deg, #0F766E, #14B8A6)' }}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.98 }}
+      <motion.div
+        className="mb-3"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.12 }}
       >
-        <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-        <div className="relative flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-white">Coffee Shop Story</h3>
-            <p className="text-teal-100 text-sm mt-1">
-              Chat with Zippy the barista in ASL
-            </p>
+        <motion.button
+          onClick={onStartStory}
+          className="w-full rounded-2xl p-5 text-left border border-white/5 overflow-hidden relative"
+          style={{ background: 'linear-gradient(135deg, #0F766E, #14B8A6)' }}
+          initial="rest"
+          animate="rest"
+          whileHover="hover"
+          whileTap={{ scale: 0.97 }}
+          variants={{
+            rest:  { scale: 1, boxShadow: '0 0 0 rgba(0,0,0,0)' },
+            hover: { scale: 1.02, boxShadow: '0 14px 40px rgba(15, 118, 110, 0.55)', transition: { duration: 0.25, ease: 'easeOut' } },
+          }}
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-white">Coffee Shop Story</h3>
+              <p className="text-teal-100 text-sm mt-1">
+                Chat with Zippy the barista in ASL
+              </p>
+            </div>
+            <div className="relative inline-flex items-center justify-center">
+              {/* steam wisps rising from the cup while hovered */}
+              {[0, 1, 2].map((s) => (
+                <motion.span
+                  key={s}
+                  className="absolute rounded-full bg-white/60"
+                  style={{ width: 4, height: 9, left: `${36 + s * 13}%`, bottom: '70%', filter: 'blur(1.5px)' }}
+                  variants={{
+                    rest:  { opacity: 0, y: 0, transition: { duration: 0.3 } },
+                    hover: { opacity: [0, 0.65, 0], y: [0, -16], transition: { duration: 1.5, repeat: Infinity, delay: s * 0.3, ease: 'easeOut' } },
+                  }}
+                />
+              ))}
+              <motion.span
+                className="text-3xl inline-block"
+                variants={{
+                  rest:  { y: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+                  hover: { y: -4, transition: { duration: 0.25, ease: 'easeOut' } },
+                }}
+              >☕</motion.span>
+            </div>
           </div>
-          <span className="text-3xl">☕</span>
-        </div>
-      </motion.button>
+        </motion.button>
+      </motion.div>
 
       {/* Sign grid */}
       <h3 className="font-bold text-sm mb-3 mt-6 text-z-gray-300 uppercase tracking-widest">

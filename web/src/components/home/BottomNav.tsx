@@ -13,6 +13,13 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'profile', label: 'Me', icon: '🤟' },
 ];
 
+// per-icon hover motion (smooth, loops gently while hovered)
+const ICON_HOVER: Record<Tab, object> = {
+  learn:   { rotate: [0, -9, 8, -6, 0],            transition: { duration: 1.0, repeat: Infinity, ease: 'easeInOut' } },
+  review:  { scale: [1, 1.16, 1, 1.12, 1],          transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' } },
+  profile: { rotate: [0, -18, 14, -18, 14, 0],      transition: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } },
+};
+
 export function BottomNav({ active, onChange }: Props) {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-z-bg/90 backdrop-blur-md border-t border-z-purple-deep/40">
@@ -23,14 +30,28 @@ export function BottomNav({ active, onChange }: Props) {
             <motion.button
               key={tab.id}
               onClick={() => onChange(tab.id)}
-              className={`relative flex flex-col items-center gap-1 px-5 py-1.5 rounded-2xl transition-all ${
+              className={`relative flex flex-col items-center gap-1 px-5 py-1.5 rounded-2xl transition-colors ${
                 isActive ? 'bg-z-purple/20' : ''
               }`}
-              whileTap={{ scale: 0.9 }}
+              initial="rest"
+              animate="rest"
+              whileHover="hover"
+              whileTap={{ scale: 0.88, y: 0 }}
+              variants={{
+                rest:  { y: 0, scale: 1, transition: { duration: 0.18, ease: 'easeOut' } },
+                hover: { y: -3, scale: 1.06, transition: { duration: 0.18, ease: 'easeOut' } },
+              }}
             >
-              <span className={`text-xl transition-transform ${isActive ? 'scale-110' : ''}`}>
+              <motion.span
+                className="text-xl inline-block"
+                style={{ transformOrigin: tab.id === 'profile' ? '75% 80%' : 'center' }}
+                variants={{
+                  rest:  { rotate: 0, scale: isActive ? 1.1 : 1, transition: { duration: 0.25, ease: 'easeOut' } },
+                  hover: ICON_HOVER[tab.id],
+                }}
+              >
                 {tab.icon}
-              </span>
+              </motion.span>
               <span className={`text-[11px] font-semibold tracking-wide ${
                 isActive ? 'text-z-purple-glow' : 'text-z-gray-400'
               }`}>

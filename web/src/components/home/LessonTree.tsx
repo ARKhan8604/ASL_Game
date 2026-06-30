@@ -31,13 +31,19 @@ export function LessonTree({ onSelectLesson }: Props) {
         <div key={unit.id} className="mb-10">
           {/* Unit header */}
           <motion.div
-            className="rounded-2xl p-4 mb-6 mx-1 border border-white/5"
+            className="rounded-2xl p-4 mb-6 mx-1 border border-white/5 cursor-default"
             style={{
               background: `linear-gradient(135deg, ${unit.color}15, ${unit.color}08)`,
             }}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: unitIdx * 0.12 }}
+            whileHover={{
+              scale: 1.015,
+              borderColor: `${unit.color}30`,
+              boxShadow: `0 4px 20px ${unit.color}18`,
+              transition: { duration: 0.2 },
+            }}
           >
             <h2 className="font-bold text-base tracking-wide" style={{ color: unit.color }}>
               {unit.title}

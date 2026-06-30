@@ -7,25 +7,53 @@ export function StreakCard() {
 
   return (
     <motion.div
-      className="relative overflow-hidden rounded-3xl p-5 mb-6"
-      style={{
-        background: 'linear-gradient(135deg, #18103A 0%, #7C3AED 100%)',
-      }}
+      className="relative overflow-hidden rounded-3xl p-5 mb-6 cursor-default"
+      style={{ background: 'linear-gradient(135deg, #18103A 0%, #7C3AED 100%)' }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
+      whileHover="blaze"
+      variants={{ blaze: { scale: 1.018, transition: { duration: 0.25, ease: 'easeOut' } } }}
     >
-      {/* Decorative glow */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-z-purple-light/20 rounded-full blur-3xl" />
+      {/* Orange glow orb — pulses on hover */}
+      <motion.div
+        className="absolute top-0 right-0 w-44 h-44 rounded-full blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(249,115,22,0.35) 0%, transparent 70%)' }}
+        variants={{
+          blaze: {
+            opacity: [0.4, 0.85, 0.4],
+            scale:   [1, 1.3, 1],
+            transition: { duration: 2.4, repeat: Infinity, ease: 'easeInOut' },
+          },
+        }}
+      />
+
+      {/* Secondary purple glow */}
+      <div className="absolute -bottom-4 -left-4 w-28 h-28 bg-z-purple-light/10 rounded-full blur-2xl pointer-events-none" />
 
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
+              {/* Fire — blazes when card is hovered */}
               <motion.span
-                className="text-3xl"
-                animate={{ rotate: [0, -8, 8, -8, 0] }}
-                transition={{ duration: 0.6, delay: 0.5 }}
+                className="text-3xl inline-block"
+                variants={{
+                  blaze: {
+                    rotate: [0, -5, 4, -4, 2, 0],
+                    x:      [0, -2, 1.5, -1.5, 0.5, 0],
+                    scale:  [1, 1.1, 1.05, 1.13, 1.06, 1],
+                    filter: [
+                      'brightness(1)    drop-shadow(0 0px 0px rgba(249,115,22,0))',
+                      'brightness(1.25) drop-shadow(0 -4px 10px rgba(249,115,22,0.7))',
+                      'brightness(1.1)  drop-shadow(0 -2px 5px rgba(249,115,22,0.4))',
+                      'brightness(1.3)  drop-shadow(0 -5px 12px rgba(249,115,22,0.8))',
+                      'brightness(1.12) drop-shadow(0 -3px 6px rgba(249,115,22,0.5))',
+                      'brightness(1)    drop-shadow(0 0px 0px rgba(249,115,22,0))',
+                    ],
+                    transition: { duration: 1.9, repeat: Infinity, ease: 'easeInOut' },
+                  },
+                }}
               >
                 🔥
               </motion.span>
@@ -37,7 +65,19 @@ export function StreakCard() {
               {streak === 0 ? 'Start signing today!' : 'Keep the momentum!'}
             </p>
           </div>
-          <div className="text-4xl opacity-80">🤟</div>
+
+          {/* Hand shakes on hover */}
+          <motion.div
+            className="text-4xl opacity-80"
+            variants={{
+              blaze: {
+                rotate: [0, -10, 10, -8, 8, 0],
+                transition: { duration: 0.5 },
+              },
+            }}
+          >
+            🤟
+          </motion.div>
         </div>
 
         <div>
@@ -53,7 +93,7 @@ export function StreakCard() {
               style={{ background: 'linear-gradient(90deg, #F97316, #FDBA74)' }}
               initial={{ width: 0 }}
               animate={{ width: `${progress * 100}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+              transition={{ duration: 0.9, ease: [0.25, 0.46, 0.45, 0.94], delay: 0.3 }}
             />
           </div>
         </div>

@@ -27,10 +27,10 @@ export function HomePage({ onStartLesson, onStartPractice, onStartStory }: Props
           {tab === 'learn' && (
             <motion.div
               key="learn"
-              initial={{ opacity: 0, x: -15 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 15 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, x: -22, scale: 0.97 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 22, scale: 0.97 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               <StreakCard />
               <LessonTree onSelectLesson={(id) => {
@@ -46,10 +46,10 @@ export function HomePage({ onStartLesson, onStartPractice, onStartStory }: Props
           {tab === 'review' && (
             <motion.div
               key="review"
-              initial={{ opacity: 0, x: 15 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -15 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, x: 22, scale: 0.97 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -22, scale: 0.97 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               <PracticeTab onStartPractice={onStartPractice} onStartStory={() => onStartStory('coffee-story')} />
             </motion.div>
@@ -58,10 +58,10 @@ export function HomePage({ onStartLesson, onStartPractice, onStartStory }: Props
           {tab === 'profile' && (
             <motion.div
               key="profile"
-              initial={{ opacity: 0, x: 15 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -15 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, x: 22, scale: 0.97 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -22, scale: 0.97 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               <ProfileTab />
             </motion.div>

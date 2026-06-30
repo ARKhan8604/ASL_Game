@@ -31,21 +31,28 @@ export interface GateDecision {
 }
 
 /**
- * Final pass decision. Requires the rule verifier to pass AND — when a classifier vote is
- * present — the classifier's probability for the PROMPTED sign to clear `minConfidence`.
- * This kills false positives the rules miss (e.g. a confusor that satisfies the loose rules
- * but that the model recognizes as a different sign).
+ * Final pass decision — a VETO gate, not a confirmation gate.
+ *
+ * The rule verifier is authoritative. The classifier can only REJECT a rule-pass, and only
+ * when it is confident (>= `vetoConfidence`) that the user actually signed a DIFFERENT sign.
+ * It NEVER vetoes on uncertainty: a correct sign the model is merely unsure about still passes.
+ *
+ * This is deliberately safe for an imperfect model — a 66%-accurate classifier would wrongly
+ * reject correct attempts if we instead demanded it CONFIRM the prompted sign. Veto-only means
+ * the worst case is "missed a confusor" (rules alone, i.e. today's behavior), never "rejected a
+ * correct sign the user actually made".
  */
 export function gatePass(
   rulePassed: boolean,
   vote: ClassifierVote | null,
   promptedSign: string,
-  minConfidence = 0.5
+  vetoConfidence = 0.7
 ): boolean {
-  if (!rulePassed) return false;
+  if (!rulePassed) return false; // rules authoritative for failure
   if (!vote) return true; // classifier disabled -> rules alone (unchanged behavior)
-  const conf = vote.perSign[promptedSign] ?? 0;
-  return conf >= minConfidence;
+  // Veto only on confident disagreement.
+  if (vote.topSign !== promptedSign && vote.confidence >= vetoConfidence) return false;
+  return true;
 }
 
 /**

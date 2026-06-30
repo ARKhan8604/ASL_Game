@@ -14,8 +14,13 @@ export const MODEL_URL = '/models/signs/model.json';
 /** URL to the class-order JSON (array of sign ids matching the model's output logits). */
 export const CLASSES_URL = '/models/signs/classes.json';
 
-/** Minimum model probability for the PROMPTED sign before a rule-pass is allowed through. */
-export const GATE_CONFIDENCE = 0.5;
+/**
+ * Veto threshold: a rule-pass is rejected ONLY when the model is at least this confident that
+ * the user signed a DIFFERENT sign. Higher = more conservative (fewer vetoes). Tuned high
+ * because model_v1 is ~66% — we only want to catch confident mismatches, never second-guess a
+ * correct sign the model is unsure about.
+ */
+export const GATE_CONFIDENCE = 0.7;
 
 /**
  * Verbose classifier logging during testing. Logs every gate decision (prompt, top-k, pass/veto)

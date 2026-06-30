@@ -6,7 +6,7 @@ const vote = (perSign: Record<string, number>): ClassifierVote => {
   return { topSign: top[0], confidence: top[1], perSign };
 };
 
-describe('gatePass', () => {
+describe('gatePass (veto-only)', () => {
   it('rule failure is never rescued by the classifier', () => {
     expect(gatePass(false, vote({ COFFEE: 0.99 }), 'COFFEE')).toBe(false);
   });
@@ -15,18 +15,27 @@ describe('gatePass', () => {
     expect(gatePass(true, null, 'COFFEE')).toBe(true);
   });
 
-  it('rule pass + confident model agreement -> pass', () => {
+  it('rule pass + model agrees -> pass', () => {
     expect(gatePass(true, vote({ COFFEE: 0.9, TEA: 0.1 }), 'COFFEE')).toBe(true);
   });
 
-  it('THE KEY CASE: rule pass but model says a different sign -> vetoed', () => {
-    // The classic confusor: loose rules accept it, but the model recognizes TEA.
-    expect(gatePass(true, vote({ TEA: 0.85, COFFEE: 0.1 }), 'COFFEE')).toBe(false);
+  it('THE KEY CASE: rule pass but model is CONFIDENT it is a different sign -> vetoed', () => {
+    expect(gatePass(true, vote({ TEA: 0.85, COFFEE: 0.1 }), 'COFFEE', 0.7)).toBe(false);
   });
 
-  it('respects the confidence threshold', () => {
-    expect(gatePass(true, vote({ COFFEE: 0.4 }), 'COFFEE', 0.5)).toBe(false);
-    expect(gatePass(true, vote({ COFFEE: 0.6 }), 'COFFEE', 0.5)).toBe(true);
+  it('NEVER vetoes on uncertainty: correct sign the model is unsure about still passes', () => {
+    // Model's top guess is wrong (TEA) but low-confidence -> do NOT reject the user's COFFEE.
+    expect(gatePass(true, vote({ TEA: 0.45, COFFEE: 0.4 }), 'COFFEE', 0.7)).toBe(true);
+  });
+
+  it('does not veto when the model agrees, even at high confidence', () => {
+    expect(gatePass(true, vote({ COFFEE: 0.95 }), 'COFFEE', 0.7)).toBe(true);
+  });
+
+  it('respects the veto threshold', () => {
+    // Different top sign at 0.65 < 0.7 threshold -> no veto; at 0.75 >= 0.7 -> veto.
+    expect(gatePass(true, vote({ TEA: 0.65, COFFEE: 0.2 }), 'COFFEE', 0.7)).toBe(true);
+    expect(gatePass(true, vote({ TEA: 0.75, COFFEE: 0.2 }), 'COFFEE', 0.7)).toBe(false);
   });
 });
 

@@ -17,6 +17,11 @@ matrix, and a minimal-pair report. Nothing is overwritten.
 """
 from __future__ import annotations
 
+import os
+# Use legacy Keras 2 so the saved model converts cleanly to TF.js (tensorflowjs speaks Keras 2,
+# not Keras 3). Must be set before TensorFlow is imported anywhere.
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
 import argparse
 import json
 from pathlib import Path
@@ -182,12 +187,16 @@ def main() -> None:
 
     # TF.js export for in-browser inference (optional dep)
     try:
+        import sys
+        import types
+        # tensorflowjs imports tensorflow_decision_forests at load (Linux-only, unused for a GRU).
+        sys.modules.setdefault("tensorflow_decision_forests",
+                               types.ModuleType("tensorflow_decision_forests"))
         import tensorflowjs as tfjs
         tfjs.converters.save_keras_model(model, str(run / "tfjs"))
         print(f"TF.js model -> {run / 'tfjs'}")
-    except ImportError:
-        print("tensorflowjs not installed — skipped browser export "
-              "(pip install tensorflowjs to enable)")
+    except ImportError as e:
+        print(f"tensorflowjs not available — skipped browser export ({e})")
     print(f"\nrun saved -> {run}")
 
 

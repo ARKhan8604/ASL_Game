@@ -2,12 +2,20 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Capture } from '@/engine/capture';
 import { RollingBuffer, HandStabilizer } from '@/engine/landmarks';
 import { verify, type VerifyResult, resultPassed } from '@/engine/verifier';
+import { gatePass, gateHint } from '@/engine/gate';
+import type { SignClassifier } from '@/engine/classifier';
 import type { Sign } from '@/engine/schema';
 
 export type RecognitionStatus = 'loading' | 'ready' | 'running' | 'error';
 
 interface UseRecognitionOpts {
   onPass?: (result: VerifyResult) => void;
+  /** Optional ML disambiguation layer. When absent/disabled, rules alone decide (today's behavior). */
+  classifier?: SignClassifier | null;
+  /** Additive coaching hint when the model confidently sees a different sign. */
+  onHint?: (msg: string | null) => void;
+  /** Min model probability for the prompted sign to allow a pass. */
+  gateConfidence?: number;
 }
 
 export function useRecognition(opts?: UseRecognitionOpts) {
@@ -21,6 +29,13 @@ export function useRecognition(opts?: UseRecognitionOpts) {
   const [result, setResult] = useState<VerifyResult | null>(null);
   const passCallbackRef = useRef(opts?.onPass);
   passCallbackRef.current = opts?.onPass;
+  const hintCallbackRef = useRef(opts?.onHint);
+  hintCallbackRef.current = opts?.onHint;
+  const classifierRef = useRef<SignClassifier | null | undefined>(opts?.classifier);
+  classifierRef.current = opts?.classifier;
+  const gateConfRef = useRef(opts?.gateConfidence ?? 0.5);
+  gateConfRef.current = opts?.gateConfidence ?? 0.5;
+  const gatingRef = useRef(false);
   const frameCountRef = useRef(0);
 
   const init = useCallback(async () => {
@@ -99,9 +114,32 @@ export function useRecognition(opts?: UseRecognitionOpts) {
           if (frameCountRef.current >= MIN_FRAMES_BEFORE_PASS && resultPassed(vr)) {
             passFrames++;
             if (passFrames >= PASS_THRESHOLD) {
-              console.log('[SignUp] PASS:', sign.name, vr.params.map(p => `${p.name}=${p.score.toFixed(2)}`).join(' '));
-              passCallbackRef.current?.(vr);
               passFrames = 0;
+              const cls = classifierRef.current;
+              if (cls?.enabled) {
+                // Gate the rule-pass through the ML classifier (single inference at pass time).
+                if (!gatingRef.current) {
+                  gatingRef.current = true;
+                  const snapshot = bufferRef.current.frames;
+                  const gatedSign = signRef.current;
+                  cls.classify(snapshot)
+                    .then((vote) => {
+                      if (!gatedSign) return;
+                      if (gatePass(true, vote, gatedSign.name, gateConfRef.current)) {
+                        console.log('[SignUp] PASS (gated):', gatedSign.name);
+                        passCallbackRef.current?.(vr);
+                        hintCallbackRef.current?.(null);
+                      } else {
+                        hintCallbackRef.current?.(gateHint(vote, gatedSign.name));
+                      }
+                    })
+                    .catch((e) => console.error('[SignUp] gate error:', e))
+                    .finally(() => { gatingRef.current = false; });
+                }
+              } else {
+                console.log('[SignUp] PASS:', sign.name, vr.params.map(p => `${p.name}=${p.score.toFixed(2)}`).join(' '));
+                passCallbackRef.current?.(vr);
+              }
             }
           } else {
             passFrames = 0;

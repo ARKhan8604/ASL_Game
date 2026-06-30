@@ -34,7 +34,6 @@ const MOOD_EMOJI: Record<string, string> = {
   surprised: '😲',
 };
 
-const HINT_LEVELS = ['hint', 'detailed', 'answer'] as const;
 
 export function StoryPage({ story, onExit }: Props) {
   const { addXp, addSigns, addGold, addDailyMinutes, recordSign, completeLesson, checkBadges, awardBadge } = useUserStore();

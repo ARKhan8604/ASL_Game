@@ -67,6 +67,62 @@ export const LESSON_UNITS: LessonUnit[] = [
       },
     ],
   },
+  {
+    id: 'unit-3',
+    title: 'Hospital Basics',
+    description: 'Learn medical signs',
+    color: '#EF4444',
+    nodes: [
+      {
+        id: 'hospital-help',
+        title: 'Getting Help',
+        description: 'Ask for help and describe pain',
+        signIds: ['HELP', 'PAIN', 'EMERGENCY'],
+        status: 'locked',
+        xpReward: 15,
+        iconEmoji: '🚑',
+        scenario: 'hospital',
+      },
+      {
+        id: 'hospital-staff',
+        title: 'Medical Staff',
+        description: 'Doctor, nurse, and hospital',
+        signIds: ['DOCTOR', 'NURSE', 'HOSPITAL'],
+        status: 'locked',
+        xpReward: 15,
+        iconEmoji: '👩‍⚕️',
+        scenario: 'hospital',
+      },
+      {
+        id: 'hospital-symptoms',
+        title: 'Symptoms',
+        description: 'Describe how you feel',
+        signIds: ['SICK', 'FEVER', 'DIZZY'],
+        status: 'locked',
+        xpReward: 15,
+        iconEmoji: '🤒',
+        scenario: 'hospital',
+      },
+    ],
+  },
+  {
+    id: 'unit-4',
+    title: 'Hospital Advanced',
+    description: 'Complete your medical vocabulary',
+    color: '#34D399',
+    nodes: [
+      {
+        id: 'hospital-care',
+        title: 'Care & Recovery',
+        description: 'Medicine, water, and breathing',
+        signIds: ['MEDICINE', 'WATER', 'BREATHE'],
+        status: 'locked',
+        xpReward: 15,
+        iconEmoji: '💊',
+        scenario: 'hospital',
+      },
+    ],
+  },
 ];
 
 export function getNextAvailableLesson(completedIds: string[]): string | null {

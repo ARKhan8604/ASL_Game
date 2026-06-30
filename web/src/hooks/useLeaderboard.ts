@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { supabase, supabaseReady } from '@/lib/supabase';
-import type { Database } from '@/lib/database.types';
 
-type LeaderboardRow = Database['public']['Views']['weekly_leaderboard']['Row'];
+export interface LeaderboardRow {
+  id: string;
+  username: string;
+  signs_this_week: number;
+  total_xp: number;
+  streak: number;
+}
 
 export function useLeaderboard() {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
@@ -16,7 +21,7 @@ export function useLeaderboard() {
       .select('*')
       .limit(20)
       .then(({ data }) => {
-        setRows(data ?? []);
+        setRows((data as unknown as LeaderboardRow[]) ?? []);
         setLoading(false);
       });
   }, []);

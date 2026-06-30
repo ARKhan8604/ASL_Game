@@ -3,11 +3,11 @@ import { handshapeConfidence } from './handshape';
 import * as mv from './movement';
 import { facingConfidence } from './orientation';
 import {
-  type Frame, type Hand, type RollingBuffer,
+  type Frame, type RollingBuffer,
   handCenter, frameHand, frameShoulderWidth, normalizedDistance,
 } from './landmarks';
 import {
-  DOMINANT, NONDOMINANT, type Role,
+  DOMINANT, NONDOMINANT,
   Anchor, MovementKind,
   type Sign,
 } from './schema';

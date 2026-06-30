@@ -7,7 +7,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function LessonHeader({ lessonTitle, current, total, onClose }: Props) {
+export function LessonHeader({ lessonTitle: _lessonTitle, current, total, onClose }: Props) {
   const progress = current / total;
 
   return (

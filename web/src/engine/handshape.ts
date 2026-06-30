@@ -125,6 +125,9 @@ const DISPATCH: Record<string, (hand: Hand) => number> = {
   b: openConfidence,
   '5': openConfidence,
   claw: clawConfidence,
+  n: nConfidence,
+  w: wConfidence,
+  middle: middleConfidence,
 };
 
 export function handshapeConfidence(hand: Hand, kind: string): number {

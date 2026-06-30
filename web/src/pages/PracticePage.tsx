@@ -32,7 +32,7 @@ export function PracticePage({ onExit }: Props) {
   const [distractors, setDistractors] = useState<string[]>([]);
   const [sessionXp, setSessionXp] = useState(0);
   const [sessionCorrect, setSessionCorrect] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const loopStartedRef = useRef<string | null>(null);
 
   const currentSignId = queue[queueIdx];

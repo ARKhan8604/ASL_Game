@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseReady } from '@/lib/supabase';
 
+type ProfileRow = { id: string; username: string };
+
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
@@ -44,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('username')
       .eq('id', userId)
       .single();
-    setUsername(data?.username ?? null);
+    setUsername((data as ProfileRow | null)?.username ?? null);
   }
 
   async function signInWithEmail(email: string, password: string): Promise<string | null> {
@@ -69,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data.user) {
       await supabase
         .from('profiles')
-        .update({ username })
+        .update({ username } as Record<string, string>)
         .eq('id', data.user.id);
     }
     return null;

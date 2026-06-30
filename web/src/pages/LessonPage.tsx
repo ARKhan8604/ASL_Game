@@ -31,7 +31,7 @@ export function LessonPage({ lessonId, onExit }: Props) {
   const [promptIdx, setPromptIdx] = useState(0);
   const [earnedXp, setEarnedXp] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const signIds = lesson?.signIds ?? [];
   const currentSignId = signIds[promptIdx];

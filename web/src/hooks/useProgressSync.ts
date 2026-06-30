@@ -6,6 +6,13 @@ import type { SignStats } from '@/types/user';
 
 const DEBOUNCE_MS = 3000;
 
+type ProgressRow = {
+  xp: number; level: number; streak: number;
+  last_practice_date: string | null;
+  completed_lessons: string[];
+  sign_accuracy: Record<string, SignStats>;
+};
+
 // Loads remote progress on sign-in and merges it with local state.
 // Debounce-syncs every store change back to Supabase while logged in.
 export function useProgressSync() {
@@ -28,13 +35,14 @@ export function useProgressSync() {
         .single();
 
       if (data) {
+        const row = data as unknown as ProgressRow;
         mergeProgress({
-          xp: data.xp,
-          level: data.level,
-          streak: data.streak,
-          lastPracticeDate: data.last_practice_date,
-          completedLessons: data.completed_lessons,
-          signAccuracy: (data.sign_accuracy as Record<string, SignStats>) ?? {},
+          xp: row.xp,
+          level: row.level,
+          streak: row.streak,
+          lastPracticeDate: row.last_practice_date,
+          completedLessons: row.completed_lessons,
+          signAccuracy: row.sign_accuracy ?? {},
         });
       }
     })();
@@ -51,17 +59,20 @@ export function useProgressSync() {
 
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
-      await supabase.from('user_progress').upsert({
-        user_id: user.id,
-        xp: store.xp,
-        level: store.level,
-        streak: store.streak,
-        longest_streak: Math.max(store.streak, 0),
-        last_practice_date: store.lastPracticeDate,
-        completed_lessons: store.completedLessons,
-        sign_accuracy: store.signAccuracy,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
+      await supabase.from('user_progress').upsert(
+        {
+          user_id: user.id,
+          xp: store.xp,
+          level: store.level,
+          streak: store.streak,
+          longest_streak: Math.max(store.streak, 0),
+          last_practice_date: store.lastPracticeDate,
+          completed_lessons: store.completedLessons,
+          sign_accuracy: store.signAccuracy as unknown as Record<string, unknown>,
+          updated_at: new Date().toISOString(),
+        } as Record<string, unknown>,
+        { onConflict: 'user_id' }
+      );
     }, DEBOUNCE_MS);
 
     return () => {
@@ -71,8 +82,10 @@ export function useProgressSync() {
   }, [user, store.xp, store.streak, store.completedLessons, store.signAccuracy]);
 }
 
-// Call this from useUserStore.recordSign to also log to sign_attempts.
+// Call this when a sign is attempted to log it for leaderboard tracking.
 export async function logSignAttempt(userId: string, signId: string, passed: boolean) {
   if (!supabaseReady) return;
-  await supabase.from('sign_attempts').insert({ user_id: userId, sign_id: signId, passed });
+  await supabase.from('sign_attempts').insert(
+    { user_id: userId, sign_id: signId, passed } as Record<string, unknown>
+  );
 }

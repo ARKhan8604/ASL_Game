@@ -11,17 +11,6 @@ function series(traj: Traj): { ts: number[]; pts: number[][] } {
   return { ts, pts };
 }
 
-function normAxis(pts: number[][], axis: number): number[] {
-  return pts.map((p) => {
-    let s = 0;
-    for (let i = 0; i < p.length; i++) {
-      if (i === axis) continue;
-      s += p[i] * p[i];
-    }
-    return Math.sqrt(s);
-  });
-}
-
 function norm2dArr(pts: number[][]): number[] {
   return pts.map((p) => Math.sqrt(p[0] * p[0] + p[1] * p[1]));
 }

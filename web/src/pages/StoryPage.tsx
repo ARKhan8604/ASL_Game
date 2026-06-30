@@ -26,7 +26,7 @@ export function StoryPage({ story, onExit }: Props) {
   const [phase, setPhase] = useState<Phase>('intro');
   const [lineIdx, setLineIdx] = useState(0);
   const [earnedXp, setEarnedXp] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const loopStartedRef = useRef<string | null>(null);
 
   const currentLine = story.lines[lineIdx];

@@ -14,9 +14,10 @@ interface Props {
   onStartLesson: (id: string) => void;
   onStartPractice: (opts?: { filterSignIds?: string[]; autoStart?: boolean }) => void;
   onStartStory: (id: string) => void;
+  onStartSpeed: () => void;
 }
 
-export function HomePage({ onStartLesson, onStartPractice, onStartStory }: Props) {
+export function HomePage({ onStartLesson, onStartPractice, onStartStory, onStartSpeed }: Props) {
   const [tab, setTab] = useState<Tab>('learn');
   const { refreshDailyQuests } = useUserStore();
 
@@ -62,6 +63,7 @@ export function HomePage({ onStartLesson, onStartPractice, onStartStory }: Props
                 onStartPractice={() => onStartPractice()}
                 onStartWeakPractice={(ids) => onStartPractice({ filterSignIds: ids, autoStart: true })}
                 onStartStory={() => onStartStory('coffee-story')}
+                onStartSpeed={onStartSpeed}
               />
             </motion.div>
           )}

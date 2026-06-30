@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UserProgress, SkillLevel, Quest, QuestType } from '@/types/user';
+import type { UserProgress, SkillLevel, Quest, QuestType, SpeedTier } from '@/types/user';
 import { generateQuestsForToday } from '@/data/quests';
+import { ALL_BADGES, getBadge } from '@/data/badges';
 
 const STREAK_MILESTONES = [7, 30, 100];
 const MILESTONE_GOLD: Record<number, number> = { 7: 5, 30: 15, 100: 50 };
@@ -31,6 +32,11 @@ function defaultProgress(): UserProgress {
     streakMilestonesAwarded: [],
     signs: 0,
     gold: 0,
+    badges: [],
+    activeBadge: null,
+    showcaseBadges: [],
+    speedHighScores: {},
+    totalCorrectSigns: 0,
   };
 }
 
@@ -53,6 +59,11 @@ interface UserStore extends UserProgress {
   updateQuestProgress: (type: QuestType, delta?: number) => void;
   claimQuest: (questId: string) => void;
   recordPracticeSession: () => void;
+  checkBadges: () => string[];
+  awardBadge: (id: string) => void;
+  setActiveBadge: (id: string | null) => void;
+  toggleShowcaseBadge: (id: string) => void;
+  recordSpeedResult: (tier: SpeedTier, score: number, combo: number, signsEarned: number) => void;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -65,6 +76,7 @@ export const useUserStore = create<UserStore>()(
           const newXp = s.xp + amount;
           return { xp: newXp, level: Math.floor(newXp / 100) + 1 };
         });
+        get().checkBadges();
       },
 
       addSigns: (amount) => set((s) => ({ signs: s.signs + amount })),
@@ -81,6 +93,7 @@ export const useUserStore = create<UserStore>()(
         });
         get().checkStreak();
         get().updateQuestProgress('complete_lesson', 1);
+        get().checkBadges();
       },
 
       recordSign: (signId, correct) => {
@@ -116,9 +129,11 @@ export const useUserStore = create<UserStore>()(
                 easeFactor,
               },
             },
+            totalCorrectSigns: s.totalCorrectSigns + (correct ? 1 : 0),
           };
         });
         if (correct) get().updateQuestProgress('sign_correct', 1);
+        get().checkBadges();
       },
 
       checkStreak: () => {
@@ -159,6 +174,7 @@ export const useUserStore = create<UserStore>()(
           };
         });
         get().updateQuestProgress('streak_days');
+        get().checkBadges();
         return newlyAwarded;
       },
 
@@ -202,7 +218,7 @@ export const useUserStore = create<UserStore>()(
         const s = get();
         if (s.questsLastReset === today && s.dailyQuests.length > 0) return;
 
-        const fresh = generateQuestsForToday().map(q => {
+        const fresh = generateQuestsForToday().map((q) => {
           if (q.type === 'streak_days') {
             const prog = Math.min(s.streak, q.target);
             return { ...q, progress: prog, completed: prog >= q.target };
@@ -216,9 +232,10 @@ export const useUserStore = create<UserStore>()(
         set((s) => {
           const updated = s.dailyQuests.map((q: Quest) => {
             if (q.type !== type || q.completed || q.claimed) return q;
-            const newProgress = type === 'streak_days'
-              ? Math.min(s.streak, q.target)
-              : Math.min(q.progress + delta, q.target);
+            const newProgress =
+              type === 'streak_days'
+                ? Math.min(s.streak, q.target)
+                : Math.min(q.progress + delta, q.target);
             return { ...q, progress: newProgress, completed: newProgress >= q.target };
           });
           return { dailyQuests: updated };
@@ -243,6 +260,93 @@ export const useUserStore = create<UserStore>()(
 
       recordPracticeSession: () => {
         get().updateQuestProgress('practice_session', 1);
+      },
+
+      checkBadges: () => {
+        const s = get();
+        const toAward: string[] = [];
+
+        const conditions: Record<string, boolean> = {
+          first_sign:     s.totalCorrectSigns >= 1,
+          streak_7:       s.streak >= 7,
+          streak_30:      s.streak >= 30,
+          streak_100:     s.streak >= 100,
+          lesson_5:       s.completedLessons.length >= 5,
+          lesson_all:     s.completedLessons.length >= 14,
+          coffee_story:   s.completedLessons.includes('coffee-story'),
+          hospital_story: s.completedLessons.includes('hospital-story'),
+          speed_warmup:   !!s.speedHighScores['warmup'],
+          speed_sprint:   !!s.speedHighScores['sprint'],
+          speed_blitz:    !!s.speedHighScores['blitz'],
+          combo_5:        Object.values(s.speedHighScores).some((hs) => hs.combo >= 5),
+          combo_10:       Object.values(s.speedHighScores).some((hs) => hs.combo >= 10),
+          signs_50:       s.totalCorrectSigns >= 50,
+          signs_200:      s.totalCorrectSigns >= 200,
+          signs_500:      s.totalCorrectSigns >= 500,
+          xp_100:         s.xp >= 100,
+          xp_500:         s.xp >= 500,
+          speed_score_50: Object.values(s.speedHighScores).some((hs) => hs.score >= 50),
+        };
+
+        for (const [id, met] of Object.entries(conditions)) {
+          if (met && !s.badges.includes(id)) {
+            toAward.push(id);
+          }
+        }
+
+        if (toAward.length > 0) {
+          let goldBonus = 0;
+          for (const id of toAward) {
+            const badge = getBadge(id);
+            if (badge) goldBonus += badge.goldReward;
+          }
+          set((st) => ({
+            badges: [...st.badges, ...toAward],
+            gold: st.gold + goldBonus,
+          }));
+        }
+
+        // Suppress unused import warning
+        void ALL_BADGES;
+
+        return toAward;
+      },
+
+      awardBadge: (id) => {
+        set((s) => {
+          if (s.badges.includes(id)) return s;
+          const badge = getBadge(id);
+          return {
+            badges: [...s.badges, id],
+            gold: s.gold + (badge?.goldReward ?? 0),
+          };
+        });
+      },
+
+      setActiveBadge: (id) => set({ activeBadge: id }),
+
+      toggleShowcaseBadge: (id) => {
+        set((s) => {
+          if (s.showcaseBadges.includes(id)) {
+            return { showcaseBadges: s.showcaseBadges.filter((b) => b !== id) };
+          }
+          if (s.showcaseBadges.length >= 3) return s;
+          return { showcaseBadges: [...s.showcaseBadges, id] };
+        });
+      },
+
+      recordSpeedResult: (tier, score, combo, signsEarned) => {
+        set((s) => {
+          const prev = s.speedHighScores[tier];
+          if (prev && prev.score >= score) return s;
+          return {
+            speedHighScores: {
+              ...s.speedHighScores,
+              [tier]: { score, combo, signsEarned },
+            },
+          };
+        });
+        get().checkBadges();
       },
     }),
     { name: 'asl-game-progress' }

@@ -1,5 +1,13 @@
 export type QuestType = 'sign_correct' | 'complete_lesson' | 'practice_session' | 'streak_days';
 
+export type SpeedTier = 'warmup' | 'sprint' | 'blitz';
+
+export interface SpeedHighScore {
+  score: number;
+  combo: number;
+  signsEarned: number;
+}
+
 export interface Quest {
   id: string;
   title: string;
@@ -34,6 +42,11 @@ export interface UserProgress {
   streakMilestonesAwarded: number[];
   signs: number;
   gold: number;
+  badges: string[];
+  activeBadge: string | null;
+  showcaseBadges: string[];
+  speedHighScores: Record<string, SpeedHighScore>;
+  totalCorrectSigns: number;
 }
 
 export interface SignStats {

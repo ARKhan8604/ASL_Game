@@ -4,6 +4,7 @@ import { HomePage } from '@/pages/HomePage';
 import { LessonPage } from '@/pages/LessonPage';
 import { PracticePage } from '@/pages/PracticePage';
 import { StoryPage } from '@/pages/StoryPage';
+import { SpeedChallengePage } from '@/pages/SpeedChallengePage';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { COFFEE_SHOP_STORY } from '@/data/stories';
 import { useProgressSync } from '@/hooks/useProgressSync';
@@ -14,7 +15,8 @@ type Screen =
   | { type: 'onboarding' }
   | { type: 'lesson'; lessonId: string }
   | { type: 'practice'; filterSignIds?: string[]; autoStart?: boolean }
-  | { type: 'story'; storyId: string };
+  | { type: 'story'; storyId: string }
+  | { type: 'speed' };
 
 export default function App() {
   useProgressSync();
@@ -37,6 +39,7 @@ export default function App() {
           onStartLesson={(id) => setScreen({ type: 'lesson', lessonId: id })}
           onStartPractice={(opts) => setScreen({ type: 'practice', ...opts })}
           onStartStory={(id) => setScreen({ type: 'story', storyId: id })}
+          onStartSpeed={() => setScreen({ type: 'speed' })}
         />
       )}
 
@@ -63,6 +66,10 @@ export default function App() {
           story={COFFEE_SHOP_STORY}
           onExit={goHome}
         />
+      )}
+
+      {screen.type === 'speed' && (
+        <SpeedChallengePage key="speed" onExit={goHome} />
       )}
     </AnimatePresence>
   );

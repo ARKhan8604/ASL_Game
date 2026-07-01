@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCamera } from '@/hooks/useCamera';
 import { useRecognition } from '@/hooks/useRecognition';
+import { useClassifier } from '@/hooks/useClassifier';
 import { useSounds } from '@/hooks/useSounds';
 import { useConfetti } from '@/hooks/useConfetti';
 import { ParameterChecklist } from '@/components/lesson/ParameterChecklist';
@@ -71,7 +72,8 @@ export function PracticePage({ onExit, filterSignIds, autoStartExpressive }: Pro
     [mode, cardPhase, currentSignId, queueIdx, queue.length, recordSign, addXp]
   );
 
-  const recognition = useRecognition({ onPass: handlePass });
+  const { classifier, logVote } = useClassifier();
+  const recognition = useRecognition({ onPass: handlePass, classifier, onVote: logVote });
 
   useEffect(() => {
     recognition.init();

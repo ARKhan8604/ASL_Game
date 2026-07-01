@@ -8,6 +8,7 @@ dist/
 
 # --- Virtual environments ---
 .venv/
+.venv-ml/
 venv/
 env/
 
@@ -20,6 +21,18 @@ recordings/
 *.mp4
 *.avi
 *.mov
+
+# --- ML dataset: bulk landmark extraction output (regenerable, huge with ASL Citizen).
+#     The small hand-recorded fixtures in tests/fixtures/ stay tracked; this bulk does not. ---
+data/
+ml/runs/
+ml/inspect_out/
+ml/inspect_merged/
+ml/inspect_*/
+calibration_log.json
+
+# --- Landmark dataset deliverable for the teammate (regenerable; send directly, not via git) ---
+asl_landmarks_for_friend.zip
 
 # --- OS / editor ---
 .DS_Store

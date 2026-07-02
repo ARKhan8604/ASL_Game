@@ -74,3 +74,12 @@ stationary non-dominant S-hand). Static control: fingerspelled **letter A**.
 Follow the pattern above. If anyone describes a check that only looks at handshape and location
 for a sign that involves movement, **push back** and ask for the movement spec before writing
 the check.
+
+## AVATAR ENGINE — MANDATORY READING BEFORE TOUCHING IT
+
+The 3D avatar work lives on branch `claude/avatar-lab-prototype` (module `web/src/avatar/`).
+**Before authoring sign animations, finger curls, or changing the animation path, read
+`docs/AVATAR_AUTHORING_HANDOFF.md`** — it records verified rig conventions, three confirmed
+authoring defects with root causes and prescribed fixes, and the rules that stopped earlier
+models from shipping broken poses (FK readback before every write; measure the rig, never assume
+axis conventions; Blender keyframes from the user outrank code-authored math).

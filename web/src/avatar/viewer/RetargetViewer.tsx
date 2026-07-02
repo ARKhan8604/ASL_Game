@@ -286,7 +286,7 @@ export function RetargetViewer() {
               color: result.source === 'keyframe' ? '#69db7c' : '#ffb84d',
             }}
           >
-            Source: {result.source === 'keyframe' ? 'KEYFRAME-DRIVEN (Blender)' : 'PROCEDURAL IK (fallback — no/1 reference pose yet)'}
+            Source: {result.source === 'keyframe' ? 'KEYFRAME-DRIVEN (reference poses)' : 'PROCEDURAL IK (fallback — no/1 reference pose yet)'}
           </div>
         )}
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
@@ -339,7 +339,7 @@ export function RetargetViewer() {
               </div>
             )}
             {result.source === 'keyframe' && (
-              <div style={{ fontSize: 11, color: '#8b93a3' }}>{Object.keys(result.frames[frameIdx]).length} bone(s) animated this frame, interpolated from human-posed Blender keyframes.</div>
+              <div style={{ fontSize: 11, color: '#8b93a3' }}>{Object.keys(result.frames[frameIdx]).length} bone(s) animated this frame, interpolated between this sign's reference poses (each pose's notes say whether it was Blender-exported or code-authored).</div>
             )}
           </>
         )}
